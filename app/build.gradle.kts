@@ -26,7 +26,9 @@ android {
     create("release") {
       val customPath = System.getenv("KEYSTORE_PATH")
       val fallbackDebug = file("${rootDir}/debug.keystore")
-      if (customPath != null && file(customPath).exists()) {
+      
+      // Only try to use customPath if it's not null and not empty
+      if (!customPath.isNullOrEmpty() && file(customPath).exists()) {
         storeFile = file(customPath)
         storePassword = System.getenv("KEYSTORE_PASSWORD") ?: System.getenv("STORE_PASSWORD") ?: "android"
         keyAlias = System.getenv("KEY_ALIAS") ?: "upload"
