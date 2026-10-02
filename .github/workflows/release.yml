@@ -24,13 +24,7 @@ jobs:
           distribution: "temurin"
           java-version: "17"
 
-      - name: Decode Default Debug Keystore
-        run: |
-          if [ -f "debug.keystore.base64" ]; then
-            base64 --decode debug.keystore.base64 > debug.keystore
-          fi
-
-      - name: Decode Custom Release Keystore (if provided)
+      - name: Setup Keystore (Custom Release or Debug Fallback)
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
@@ -38,6 +32,18 @@ jobs:
             mkdir -p app
             echo "$KEYSTORE_BASE64" | base64 --decode > app/billgen-release.jks
             echo "KEYSTORE_PATH=$GITHUB_WORKSPACE/app/billgen-release.jks" >> $GITHUB_ENV
+            echo "Keystore setup: Using custom release keystore"
+          else
+            if [ -f "debug.keystore.base64" ]; then
+              base64 --decode debug.keystore.base64 > debug.keystore
+            fi
+            if [ ! -f "debug.keystore" ]; then
+              keytool -genkey -v -keystore debug.keystore -keyalg RSA -keysize 2048 -validity 10000 \
+                -alias androiddebugkey -keypass android -storepass android \
+                -dname "CN=Android Debug,O=Android,C=US"
+            fi
+            echo "KEYSTORE_PATH=$GITHUB_WORKSPACE/debug.keystore" >> $GITHUB_ENV
+            echo "Keystore setup: Using debug keystore fallback ($GITHUB_WORKSPACE/debug.keystore)"
           fi
 
       - name: Create fallback .env file
