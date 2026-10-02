@@ -40,15 +40,31 @@ android {
       val rootDebug = file("${rootDir}/debug.keystore")
       if (!rootDebug.exists()) {
         val b64File = file("${rootDir}/debug.keystore.base64")
-        val b64Content = if (b64File.exists()) {
-          b64File.readText().trim()
+        if (b64File.exists()) {
+          try {
+            val b64Content = b64File.readText().trim()
+            val bytes = Base64.getDecoder().decode(b64Content)
+            rootDebug.writeBytes(bytes)
+          } catch (e: Exception) {
+            println("Warning: Failed to decode keystore from debug.keystore.base64: ${e.message}")
+          }
         } else {
-          "MIIKZgIBAzCCChAGCSqGSIb3DQEHAaCCCgEEggn9MIIJ+TCCBcAGCSqGSIb3DQEHAaCCBbEEggWtMIIFqTCCBaUGCyqGSIb3DQEMCgECoIIFQDCCBTwwZgYJKoZIhvcNAQUNMFkwOAYJKoZIhvcNAQUMMCsEFFiIxHQ8sHs4Fey8FGFv7I91hdXUA[...]
+          // Generate a default debug keystore if none exists
+          println("Generating default debug keystore...")
+          try {
+            Runtime.getRuntime().exec(arrayOf(
+              "keytool", "-genkey", "-v",
+              "-keystore", rootDebug.absolutePath,
+              "-keyalg", "RSA", "-keysize", "2048", "-validity", "10000",
+              "-alias", "androiddebugkey",
+              "-keypass", "android",
+              "-storepass", "android",
+              "-dname", "CN=Android Debug,O=Android,C=US"
+            )).waitFor()
+          } catch (e: Exception) {
+            println("Warning: Failed to generate debug keystore: ${e.message}")
+          }
         }
-        try {
-          val bytes = Base64.getDecoder().decode(b64Content)
-          rootDebug.writeBytes(bytes)
-        } catch (_: Exception) {}
       }
       rootDebug
     }
