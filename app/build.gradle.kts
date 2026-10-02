@@ -1,4 +1,5 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+import java.util.Base64
 
 plugins {
   alias(libs.plugins.android.application)
@@ -13,7 +14,7 @@ android {
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
-    applicationId = "com.example"
+    applicationId = "com.billgen.app"
     minSdk = 24
     targetSdk = 36
     versionCode = 1
@@ -26,28 +27,48 @@ android {
     create("release") {
       val customPath = System.getenv("KEYSTORE_PATH")
       val fallbackDebug = file("${rootDir}/debug.keystore")
-      
-      // Only try to use customPath if it's not null and not empty
+      val b64File = file("${rootDir}/debug.keystore.base64")
+
+      if (!fallbackDebug.exists() && b64File.exists()) {
+        try {
+          val bytes = Base64.getDecoder().decode(b64File.readText().trim())
+          fallbackDebug.writeBytes(bytes)
+        } catch (_: Exception) {}
+      }
+
       if (!customPath.isNullOrEmpty() && file(customPath).exists()) {
         storeFile = file(customPath)
         storePassword = System.getenv("KEYSTORE_PASSWORD") ?: System.getenv("STORE_PASSWORD") ?: "android"
         keyAlias = System.getenv("KEY_ALIAS") ?: "upload"
         keyPassword = System.getenv("KEY_PASSWORD") ?: "android"
-      } else if (fallbackDebug.exists()) {
+      } else {
         storeFile = fallbackDebug
         storePassword = "android"
         keyAlias = "androiddebugkey"
         keyPassword = "android"
       }
+      enableV1Signing = true
+      enableV2Signing = true
+      enableV3Signing = true
+      enableV4Signing = true
     }
     create("debugConfig") {
       val fallbackDebug = file("${rootDir}/debug.keystore")
-      if (fallbackDebug.exists()) {
-        storeFile = fallbackDebug
-        storePassword = "android"
-        keyAlias = "androiddebugkey"
-        keyPassword = "android"
+      val b64File = file("${rootDir}/debug.keystore.base64")
+      if (!fallbackDebug.exists() && b64File.exists()) {
+        try {
+          val bytes = Base64.getDecoder().decode(b64File.readText().trim())
+          fallbackDebug.writeBytes(bytes)
+        } catch (_: Exception) {}
       }
+      storeFile = fallbackDebug
+      storePassword = "android"
+      keyAlias = "androiddebugkey"
+      keyPassword = "android"
+      enableV1Signing = true
+      enableV2Signing = true
+      enableV3Signing = true
+      enableV4Signing = true
     }
   }
 
@@ -56,16 +77,10 @@ android {
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      val relConfig = signingConfigs.findByName("release")
-      if (relConfig?.storeFile != null && relConfig.storeFile!!.exists()) {
-        signingConfig = relConfig
-      }
+      signingConfig = signingConfigs.getByName("release")
     }
     debug {
-      val dbgConfig = signingConfigs.findByName("debugConfig")
-      if (dbgConfig?.storeFile != null && dbgConfig.storeFile!!.exists()) {
-        signingConfig = dbgConfig
-      }
+      signingConfig = signingConfigs.getByName("debugConfig")
     }
   }
   compileOptions {
