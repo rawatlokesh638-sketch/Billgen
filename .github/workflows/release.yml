@@ -23,13 +23,14 @@ jobs:
         with:
           distribution: "temurin"
           java-version: "17"
-          cache: "gradle"
 
-      - name: Accept Android SDK Licenses
+      - name: Decode Default Debug Keystore
         run: |
-          yes | sdkmanager --licenses || true
+          if [ -f "debug.keystore.base64" ]; then
+            base64 --decode debug.keystore.base64 > debug.keystore
+          fi
 
-      - name: Decode Signing Key (if provided in Secrets)
+      - name: Decode Custom Release Keystore (if provided)
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
@@ -44,6 +45,12 @@ jobs:
           touch .env
           echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
 
+      - name: Make Gradle Wrapper Executable
+        run: |
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+          fi
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
@@ -56,10 +63,9 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           if [ -f "./gradlew" ]; then
-            chmod +x ./gradlew
-            ./gradlew assembleRelease --no-daemon --no-configuration-cache --stacktrace
+            ./gradlew assembleRelease --no-daemon --stacktrace
           else
-            gradle assembleRelease --no-daemon --no-configuration-cache --stacktrace
+            gradle assembleRelease --no-daemon --stacktrace
           fi
 
       - name: Prepare Release Artifact
