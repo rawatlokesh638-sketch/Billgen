@@ -457,6 +457,111 @@ fun SettingsSection(viewModel: BillGenViewModel, onOpenProUpgrade: () -> Unit) {
         }
 
         item {
+            val userEmail = viewModel.userEmail
+            val isLoggedIn = viewModel.isUserLoggedIn
+            val isSyncing by viewModel.isCloudSyncing.collectAsState()
+            val syncStatus by viewModel.cloudSyncStatus.collectAsState()
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(16.dp),
+                border = CardDefaults.outlinedCardBorder()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.CloudSync,
+                                contentDescription = null,
+                                tint = Color(0xFF15945B),
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text("Firebase Cloud Sync", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text(
+                                    text = if (isLoggedIn && userEmail.isNotBlank()) userEmail else "Guest Mode (Local Only)",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Surface(
+                            color = Color(0xFFE9F8F0),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "billgen-cc831",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF15945B),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(text = syncStatus, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                viewModel.syncDataFromCloud()
+                                Toast.makeText(context, "Syncing from Firebase...", Toast.LENGTH_SHORT).show()
+                            },
+                            enabled = !isSyncing,
+                            modifier = Modifier.weight(1f).height(40.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF15945B))
+                        ) {
+                            Icon(imageVector = Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Download Cloud", fontSize = 11.sp)
+                        }
+
+                        Button(
+                            onClick = {
+                                viewModel.uploadAllLocalDataToCloud()
+                                Toast.makeText(context, "Backing up to Firebase...", Toast.LENGTH_SHORT).show()
+                            },
+                            enabled = !isSyncing,
+                            modifier = Modifier.weight(1f).height(40.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = BillGenOrange)
+                        ) {
+                            Icon(imageVector = Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Backup Local", fontSize = 11.sp)
+                        }
+                    }
+
+                    if (isLoggedIn) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        TextButton(
+                            onClick = {
+                                viewModel.signOutUser()
+                                Toast.makeText(context, "Logged out", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.align(Alignment.End)
+                        ) {
+                            Text("Log Out / Switch Account", fontSize = 11.sp, color = Color(0xFFD94732))
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
             Text("Business Profile & Invoicing Defaults", fontWeight = FontWeight.Bold, fontSize = 15.sp)
         }
 

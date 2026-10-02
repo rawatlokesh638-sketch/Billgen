@@ -6,6 +6,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.view.ViewGroup
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -52,6 +53,8 @@ object AdsterraAdsConfig {
 
     const val SMARTLINK_URL = "https://www.profitableratecpmnetwork.com/e2905fw619?key=f95b245bc9c99d1770e9aa518049431b"
     const val POPUNDER_URL = "https://pl31001085.profitableratecpmnetwork.com/0a/46/b8/0a46b8ebc82f8e7138db80c9b0781365.js"
+
+    const val MOBILE_USER_AGENT = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 }
 
 data class EarnKaroDeal(
@@ -135,17 +138,18 @@ fun AdsterraBannerAd(
         <!DOCTYPE html>
         <html>
         <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
         <style>
           * { box-sizing: border-box; margin: 0; padding: 0; }
-          body { 
+          html, body { 
             background: transparent; 
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
-            overflow: hidden;
             width: 100%;
             height: 100%;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
           }
           iframe { max-width: 100% !important; border: 0 !important; }
         </style>
@@ -169,9 +173,10 @@ fun AdsterraBannerAd(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp)
-            .testTag("adsterra_banner_card"),
+            .testTag("adsterra_banner_card")
+            .clickable { openAffiliateUrl(context, AdsterraAdsConfig.SMARTLINK_URL) },
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
         border = CardDefaults.outlinedCardBorder()
     ) {
         Column(
@@ -192,7 +197,7 @@ fun AdsterraBannerAd(
                     shape = RoundedCornerShape(4.dp)
                 ) {
                     Text(
-                        text = "Ad • Sponsored Banner",
+                        text = "Ad • Sponsored Adsterra Banner",
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFFD97706),
@@ -200,17 +205,17 @@ fun AdsterraBannerAd(
                     )
                 }
                 Icon(
-                    imageVector = Icons.Default.Info,
+                    imageVector = Icons.Default.Launch,
                     contentDescription = "Ad Info",
                     tint = Color.Gray,
-                    modifier = Modifier.size(12.dp)
+                    modifier = Modifier.size(13.dp)
                 )
             }
 
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(68.dp)
+                    .height(72.dp)
                     .clip(RoundedCornerShape(8.dp)),
                 contentAlignment = Alignment.Center
             ) {
@@ -222,10 +227,18 @@ fun AdsterraBannerAd(
                                 ViewGroup.LayoutParams.MATCH_PARENT
                             )
                             setBackgroundColor(0x00000000)
-                            settings.javaScriptEnabled = true
-                            settings.domStorageEnabled = true
-                            settings.loadWithOverviewMode = true
-                            settings.useWideViewPort = true
+                            settings.apply {
+                                javaScriptEnabled = true
+                                domStorageEnabled = true
+                                databaseEnabled = true
+                                mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                                userAgentString = AdsterraAdsConfig.MOBILE_USER_AGENT
+                                loadWithOverviewMode = true
+                                useWideViewPort = true
+                                javaScriptCanOpenWindowsAutomatically = true
+                                setSupportMultipleWindows(true)
+                            }
+                            webChromeClient = WebChromeClient()
                             webViewClient = object : WebViewClient() {
                                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                                     val url = request?.url?.toString() ?: return false
@@ -260,15 +273,18 @@ fun AdsterraNativeAd(
         <!DOCTYPE html>
         <html>
         <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
         <style>
           * { box-sizing: border-box; margin: 0; padding: 0; }
-          body { 
+          html, body { 
             background: transparent; 
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             padding: 4px;
+            width: 100%;
+            height: 100%;
           }
-          #${AdsterraAdsConfig.NATIVE_CONTAINER_ID} { width: 100% !important; min-height: 80px; }
+          #${AdsterraAdsConfig.NATIVE_CONTAINER_ID} { width: 100% !important; min-height: 90px; }
           a { text-decoration: none; }
         </style>
         </head>
@@ -283,7 +299,8 @@ fun AdsterraNativeAd(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp)
-            .testTag("adsterra_native_card"),
+            .testTag("adsterra_native_card")
+            .clickable { openAffiliateUrl(context, AdsterraAdsConfig.SMARTLINK_URL) },
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = CardDefaults.outlinedCardBorder()
@@ -320,12 +337,12 @@ fun AdsterraNativeAd(
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 90.dp, max = 130.dp)
+                    .heightIn(min = 100.dp, max = 150.dp)
             ) {
                 AndroidView(
                     factory = { ctx ->
@@ -335,10 +352,18 @@ fun AdsterraNativeAd(
                                 ViewGroup.LayoutParams.WRAP_CONTENT
                             )
                             setBackgroundColor(0x00000000)
-                            settings.javaScriptEnabled = true
-                            settings.domStorageEnabled = true
-                            settings.loadWithOverviewMode = true
-                            settings.useWideViewPort = true
+                            settings.apply {
+                                javaScriptEnabled = true
+                                domStorageEnabled = true
+                                databaseEnabled = true
+                                mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                                userAgentString = AdsterraAdsConfig.MOBILE_USER_AGENT
+                                loadWithOverviewMode = true
+                                useWideViewPort = true
+                                javaScriptCanOpenWindowsAutomatically = true
+                                setSupportMultipleWindows(true)
+                            }
+                            webChromeClient = WebChromeClient()
                             webViewClient = object : WebViewClient() {
                                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                                     val url = request?.url?.toString() ?: return false

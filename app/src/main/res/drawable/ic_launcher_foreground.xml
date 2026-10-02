@@ -3,6 +3,6 @@
     <item
         android:width="66dp"
         android:height="66dp"
-        android:drawable="@drawable/ic_app_logo"
+        android:drawable="@drawable/billgen_app_icon_1790929994003"
         android:gravity="center" />
 </layer-list>

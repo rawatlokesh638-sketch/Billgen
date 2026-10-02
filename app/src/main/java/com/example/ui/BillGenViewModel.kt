@@ -3,12 +3,15 @@ package com.example.ui
 import android.app.Application
 import android.content.Context
 import android.graphics.Bitmap
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.ai.CalculationDiscrepancy
 import com.example.data.ai.GeminiInvoiceService
 import com.example.data.ai.LocalInvoiceParser
 import com.example.data.ai.ParsedInvoiceData
+import com.example.data.firebase.FirebaseAuthManager
+import com.example.data.firebase.FirebaseSyncService
 import com.example.data.local.AppDatabase
 import com.example.data.local.Converters
 import com.example.data.model.BusinessProfile
@@ -19,6 +22,7 @@ import com.example.data.model.QuotationEntity
 import com.example.data.model.ReceiptEntity
 import com.example.ui.monetization.DailyRetentionHelper
 import com.example.util.FormatUtils
+import com.google.firebase.auth.FirebaseUser
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -37,7 +41,23 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
     val retentionHelper = DailyRetentionHelper(application)
     private val converters = Converters()
 
+    val authManager = FirebaseAuthManager()
+    val syncService = FirebaseSyncService()
+
     private val prefs = application.getSharedPreferences("billgen_business_profile", Context.MODE_PRIVATE)
+
+    val currentUser: StateFlow<FirebaseUser?> = authManager.authStateFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), authManager.currentUser)
+
+    val isUserLoggedIn: Boolean get() = authManager.isUserLoggedIn
+    val currentUserId: String get() = authManager.currentUserId
+    val userEmail: String get() = authManager.userEmail
+
+    private val _isCloudSyncing = MutableStateFlow(false)
+    val isCloudSyncing: StateFlow<Boolean> = _isCloudSyncing.asStateFlow()
+
+    private val _cloudSyncStatus = MutableStateFlow("Firebase Connected • billgen-cc831")
+    val cloudSyncStatus: StateFlow<String> = _cloudSyncStatus.asStateFlow()
 
     val allInvoices: StateFlow<List<InvoiceEntity>> = invoiceDao.getAllInvoices()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -78,8 +98,8 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
     val editorTheme = MutableStateFlow("orange")
     val editorCurrency = MutableStateFlow("INR")
 
-    private val _activePreviewInvoice = MutableStateFlow<InvoiceEntity?>(null)
-    val activePreviewInvoice: StateFlow<InvoiceEntity?> = _activePreviewInvoice.asStateFlow()
+    private val _selectedImageBitmap = MutableStateFlow<Bitmap?>(null)
+    val selectedImageBitmap: StateFlow<Bitmap?> = _selectedImageBitmap.asStateFlow()
 
     private val _isExtracting = MutableStateFlow(false)
     val isExtracting: StateFlow<Boolean> = _isExtracting.asStateFlow()
@@ -87,29 +107,151 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
     private val _aiStatusMessage = MutableStateFlow("")
     val aiStatusMessage: StateFlow<String> = _aiStatusMessage.asStateFlow()
 
-    private val _selectedImageBitmap = MutableStateFlow<Bitmap?>(null)
-    val selectedImageBitmap: StateFlow<Bitmap?> = _selectedImageBitmap.asStateFlow()
+    private val _activePreviewInvoice = MutableStateFlow<InvoiceEntity?>(null)
+    val activePreviewInvoice: StateFlow<InvoiceEntity?> = _activePreviewInvoice.asStateFlow()
 
-    val aiNlpResult = MutableStateFlow<String?>(null)
-    val aiMessyResult = MutableStateFlow<String?>(null)
-    val aiCheckResult = MutableStateFlow<String?>(null)
+    val aiNlpResult = MutableStateFlow("")
+    val aiMessyResult = MutableStateFlow("")
+    val aiCheckResult = MutableStateFlow("")
 
     init {
-        retentionHelper.recordDailyActivity()
+        // Automatically sync from cloud if user is already logged in
+        if (authManager.isUserLoggedIn) {
+            syncDataFromCloud()
+        }
+    }
+
+    // --- Firebase Auth Methods ---
+    fun signUp(email: String, pass: String, storeName: String, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            val res = authManager.signUpWithEmail(email, pass)
+            res.onSuccess { user ->
+                if (storeName.isNotBlank()) {
+                    val updated = _businessProfile.value.copy(businessName = storeName, businessEmail = email)
+                    updateBusinessProfile(updated)
+                }
+                syncDataFromCloud()
+                onResult(true, "Account created successfully")
+            }.onFailure { err ->
+                onResult(false, err.message ?: "Signup error")
+            }
+        }
+    }
+
+    fun signIn(email: String, pass: String, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            val res = authManager.signInWithEmail(email, pass)
+            res.onSuccess {
+                syncDataFromCloud()
+                onResult(true, "Login successful")
+            }.onFailure { err ->
+                onResult(false, err.message ?: "Login error")
+            }
+        }
+    }
+
+    fun signInAsGuest(onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            val res = authManager.signInAnonymously()
+            res.onSuccess {
+                onResult(true, "Logged in as Guest")
+            }.onFailure { err ->
+                onResult(false, err.message ?: "Guest login error")
+            }
+        }
+    }
+
+    fun signOutUser() {
+        authManager.signOut()
+    }
+
+    fun sendPasswordReset(email: String, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            val res = authManager.sendPasswordReset(email)
+            res.onSuccess { onResult(true, "Reset link sent") }
+                .onFailure { err -> onResult(false, err.message ?: "Failed to send reset link") }
+        }
+    }
+
+    // --- Firebase Cloud Sync Methods ---
+    fun syncDataFromCloud() {
+        viewModelScope.launch {
+            try {
+                _isCloudSyncing.value = true
+                _cloudSyncStatus.value = "Syncing data from Firebase..."
+                val uid = authManager.currentUserId
+
+                val cloudInvoices = syncService.fetchAllInvoicesFromCloud(uid)
+                for (inv in cloudInvoices) {
+                    invoiceDao.insertInvoice(inv)
+                }
+
+                val cloudProducts = syncService.fetchAllProductsFromCloud(uid)
+                for (p in cloudProducts) {
+                    productDao.insertProduct(p)
+                }
+
+                val cloudProfile = syncService.fetchProfileFromCloud(uid)
+                if (cloudProfile != null) {
+                    _businessProfile.value = cloudProfile
+                }
+
+                _cloudSyncStatus.value = "Synced with Firebase • ${cloudInvoices.size} bills"
+                _isCloudSyncing.value = false
+            } catch (e: Exception) {
+                _cloudSyncStatus.value = "Sync error: ${e.message}"
+                _isCloudSyncing.value = false
+            }
+        }
+    }
+
+    fun uploadAllLocalDataToCloud() {
+        viewModelScope.launch {
+            try {
+                _isCloudSyncing.value = true
+                _cloudSyncStatus.value = "Backing up data to Firebase..."
+                val uid = authManager.currentUserId
+
+                val invoices = allInvoices.value
+                for (inv in invoices) {
+                    syncService.pushInvoiceToCloud(uid, inv)
+                }
+
+                val products = allProducts.value
+                for (p in products) {
+                    syncService.pushProductToCloud(uid, p)
+                }
+
+                val receipts = allReceipts.value
+                for (r in receipts) {
+                    syncService.pushReceiptToCloud(uid, r)
+                }
+
+                syncService.pushBusinessProfileToCloud(uid, _businessProfile.value)
+
+                _cloudSyncStatus.value = "Backup complete! All data stored in Firebase"
+                _isCloudSyncing.value = false
+            } catch (e: Exception) {
+                _cloudSyncStatus.value = "Upload error: ${e.message}"
+                _isCloudSyncing.value = false
+            }
+        }
+    }
+
+    fun prepareNewInvoice() {
         initNewInvoice()
-        seedSampleDataIfEmpty()
     }
 
     fun initNewInvoice() {
         editingInvoiceId = null
         val prof = _businessProfile.value
         editorInvoiceNo.value = FormatUtils.generateNextInvoiceNumber(prof.invoicePrefix, prof.nextInvoiceNumber)
-        editorCustomerName.value = ""
-        editorCustomerPhone.value = ""
-        editorCustomerAddress.value = ""
         editorDate.value = FormatUtils.currentDateFormatted()
         editorDueDate.value = ""
         editorOrderId.value = ""
+        editorCustomerName.value = ""
+        editorCustomerPhone.value = ""
+        editorCustomerAddress.value = ""
         editorItems.value = listOf(LineItem(name = "", qty = 1.0, price = 0.0))
         editorDiscount.value = 0.0
         editorShipping.value = 0.0
@@ -120,26 +262,30 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
         editorPaymentStatus.value = "UNPAID"
         editorPaymentMethod.value = "UPI"
         editorAmountPaid.value = 0.0
-        editorNotes.value = "Thank you for your business!"
-        editorTerms.value = "Goods once sold cannot be returned unless defective."
+        editorNotes.value = prof.defaultNotes
+        editorTerms.value = prof.defaultTerms
         editorTemplate.value = "modern"
-        editorTheme.value = "orange"
+        editorTheme.value = prof.defaultTheme
         editorCurrency.value = prof.defaultCurrency
         _selectedImageBitmap.value = null
-        _aiStatusMessage.value = "Ready to create invoice"
+        _aiStatusMessage.value = ""
+    }
+
+    fun setPreviewInvoice(invoice: InvoiceEntity) {
+        _activePreviewInvoice.value = invoice
     }
 
     fun loadInvoiceForEditing(invoice: InvoiceEntity) {
         editingInvoiceId = invoice.id
         editorInvoiceNo.value = invoice.invoiceNo
-        editorCustomerName.value = invoice.customerName
-        editorCustomerPhone.value = invoice.customerPhone
-        editorCustomerAddress.value = invoice.customerAddress
         editorDate.value = invoice.date
         editorDueDate.value = invoice.dueDate
         editorOrderId.value = invoice.orderId
+        editorCustomerName.value = invoice.customerName
+        editorCustomerPhone.value = invoice.customerPhone
+        editorCustomerAddress.value = invoice.customerAddress
         editorItems.value = converters.toLineItemList(invoice.itemsJson).ifEmpty {
-            listOf(LineItem(name = "Item", qty = 1.0, price = invoice.total))
+            listOf(LineItem(name = "", qty = 1.0, price = 0.0))
         }
         editorDiscount.value = invoice.discount
         editorShipping.value = invoice.shipping
@@ -158,25 +304,21 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
         _activePreviewInvoice.value = invoice
     }
 
-    fun setPreviewInvoice(invoice: InvoiceEntity) {
+    fun setActivePreviewInvoice(invoice: InvoiceEntity) {
         _activePreviewInvoice.value = invoice
     }
 
-    fun addItemToEditor() {
+    fun addEditorItem() {
         val current = editorItems.value.toMutableList()
         current.add(LineItem(name = "", qty = 1.0, price = 0.0))
         editorItems.value = current
     }
 
-    fun updateItemInEditor(index: Int, item: LineItem) {
-        val current = editorItems.value.toMutableList()
-        if (index in current.indices) {
-            current[index] = item
-            editorItems.value = current
-        }
+    fun addItemToEditor() {
+        addEditorItem()
     }
 
-    fun removeItemFromEditor(index: Int) {
+    fun removeEditorItem(index: Int) {
         val current = editorItems.value.toMutableList()
         if (index in current.indices) {
             current.removeAt(index)
@@ -187,15 +329,31 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun removeItemFromEditor(index: Int) {
+        removeEditorItem(index)
+    }
+
+    fun updateEditorItem(index: Int, updatedItem: LineItem) {
+        val current = editorItems.value.toMutableList()
+        if (index in current.indices) {
+            current[index] = updatedItem
+            editorItems.value = current
+        }
+    }
+
+    fun updateItemInEditor(index: Int, updatedItem: LineItem) {
+        updateEditorItem(index, updatedItem)
+    }
+
     fun selectCatalogProductForItem(index: Int, product: ProductEntity) {
         val current = editorItems.value.toMutableList()
         if (index in current.indices) {
             val old = current[index]
             current[index] = old.copy(
-                catalogId = product.id,
                 name = product.name,
                 price = product.price,
-                hsn = product.hsn
+                hsn = product.hsn,
+                catalogId = product.id
             )
             editorItems.value = current
         }
@@ -313,6 +471,9 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
 
             invoiceDao.insertInvoice(invoice)
 
+            // Real-time Cloud Push to Firebase
+            syncService.pushInvoiceToCloud(authManager.currentUserId, invoice)
+
             editorItems.value.forEach { item ->
                 item.catalogId?.let { catId ->
                     productDao.deductStock(catId, item.qty.toInt().coerceAtLeast(1))
@@ -343,6 +504,7 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
                 updatedAt = System.currentTimeMillis()
             )
             invoiceDao.insertInvoice(duplicated)
+            syncService.pushInvoiceToCloud(authManager.currentUserId, duplicated)
             incrementNextInvoiceNumber()
         }
     }
@@ -350,6 +512,7 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
     fun deleteInvoice(invoice: InvoiceEntity) {
         viewModelScope.launch {
             invoiceDao.deleteInvoiceById(invoice.id)
+            syncService.deleteInvoiceFromCloud(authManager.currentUserId, invoice.id)
             if (_activePreviewInvoice.value?.id == invoice.id) {
                 _activePreviewInvoice.value = null
             }
@@ -367,6 +530,7 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
                 updatedAt = System.currentTimeMillis()
             )
             invoiceDao.updateInvoice(updated)
+            syncService.pushInvoiceToCloud(authManager.currentUserId, updated)
 
             val receipt = ReceiptEntity(
                 receiptNo = "REC-${System.currentTimeMillis().toString().takeLast(4)}",
@@ -379,6 +543,7 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
                 businessName = invoice.businessName
             )
             receiptDao.insertReceipt(receipt)
+            syncService.pushReceiptToCloud(authManager.currentUserId, receipt)
             _activePreviewInvoice.value = updated
         }
     }
@@ -386,12 +551,14 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
     fun addOrUpdateProduct(product: ProductEntity) {
         viewModelScope.launch {
             productDao.insertProduct(product)
+            syncService.pushProductToCloud(authManager.currentUserId, product)
         }
     }
 
     fun deleteProduct(product: ProductEntity) {
         viewModelScope.launch {
             productDao.deleteProductById(product.id)
+            syncService.deleteProductFromCloud(authManager.currentUserId, product.id)
         }
     }
 
@@ -428,6 +595,7 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
                 currency = prof.defaultCurrency
             )
             invoiceDao.insertInvoice(invoice)
+            syncService.pushInvoiceToCloud(authManager.currentUserId, invoice)
             quotationDao.updateStatus(quotation.id, "Converted")
             incrementNextInvoiceNumber()
             _activePreviewInvoice.value = invoice
@@ -457,6 +625,10 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
             .putFloat("default_gst", newProfile.defaultGstRate.toFloat())
             .putString("currency", newProfile.defaultCurrency)
             .apply()
+
+        viewModelScope.launch {
+            syncService.pushBusinessProfileToCloud(authManager.currentUserId, newProfile)
+        }
     }
 
     private fun incrementNextInvoiceNumber() {
@@ -507,19 +679,5 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
             aiCheckResult.value = "⚠️ Could not parse Quantity, Price and Total from text."
         }
         return result
-    }
-
-    private fun seedSampleDataIfEmpty() {
-        viewModelScope.launch {
-            val p1 = ProductEntity(name = "Cotton T-Shirt", price = 599.0, stock = 24, hsn = "6109")
-            val p2 = ProductEntity(name = "Slim Fit Jeans", price = 999.0, stock = 12, hsn = "6203")
-            val p3 = ProductEntity(name = "Baseball Cap", price = 299.0, stock = 4, hsn = "6505")
-            val p4 = ProductEntity(name = "Winter Hoodie", price = 1299.0, stock = 8, hsn = "6102")
-
-            productDao.insertProduct(p1)
-            productDao.insertProduct(p2)
-            productDao.insertProduct(p3)
-            productDao.insertProduct(p4)
-        }
     }
 }

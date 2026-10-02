@@ -52,6 +52,20 @@ enum class InvoiceSubScreen {
 
 @Composable
 fun MainAppContent(viewModel: BillGenViewModel) {
+    val currentUser by viewModel.currentUser.collectAsState()
+    var isGuestMode by remember { mutableStateOf(false) }
+
+    // If not authenticated and not explicitly in guest mode, show Auth Screen (Signup / Login)
+    if (currentUser == null && !isGuestMode) {
+        AuthScreen(
+            viewModel = viewModel,
+            onAuthSuccess = {
+                isGuestMode = true
+            }
+        )
+        return
+    }
+
     var currentScreen by remember { mutableStateOf<Screen>(Screen.Dashboard) }
     var invoiceSubScreen by remember { mutableStateOf(InvoiceSubScreen.EDITOR) }
     var editorInitialMode by remember { mutableStateOf("ai") }

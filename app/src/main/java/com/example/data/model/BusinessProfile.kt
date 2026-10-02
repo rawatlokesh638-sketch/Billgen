@@ -13,6 +13,9 @@ data class BusinessProfile(
     val logoUri: String = "",
     val defaultGstRate: Double = 18.0,
     val defaultCurrency: String = "INR",
+    val defaultTheme: String = "orange",
+    val defaultNotes: String = "Thank you for your business!",
+    val defaultTerms: String = "Goods once sold cannot be returned unless defective.",
     val invoicePrefix: String = "INV",
     val nextInvoiceNumber: Int = 1
 )
