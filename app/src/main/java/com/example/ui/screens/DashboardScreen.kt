@@ -12,11 +12,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.animation.core.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -42,7 +44,8 @@ fun DashboardScreen(
     onNavigateToPreview: (InvoiceEntity) -> Unit,
     onNavigateToUdhaar: () -> Unit,
     onOpenProUpgrade: () -> Unit,
-    onOpenRewardedAd: () -> Unit
+    onOpenRewardedAd: () -> Unit,
+    onOpenAiAgent: () -> Unit = {}
 ) {
     val invoices by viewModel.allInvoices.collectAsState()
     val businessProfile by viewModel.businessProfile.collectAsState()
@@ -158,6 +161,107 @@ fun DashboardScreen(
                 .padding(padding),
             contentPadding = PaddingValues(bottom = 80.dp)
         ) {
+            item {
+                // Animated smaller AI Copilot card at the top of the Dashboard
+                val infiniteTransition = rememberInfiniteTransition(label = "agentBounce")
+                val offsetY by infiniteTransition.animateFloat(
+                    initialValue = -3f,
+                    targetValue = 3f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(1200, easing = LinearOutSlowInEasing),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "agentOffsetY"
+                )
+
+                Surface(
+                    onClick = onOpenAiAgent,
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color(0xFF0F172A),
+                    border = BorderStroke(
+                        1.dp,
+                        Brush.horizontalGradient(
+                            listOf(Color(0xFF6366F1), BillGenOrange, Color(0xFF10B981))
+                        )
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                        .graphicsLayer { translationY = offsetY }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    Brush.linearGradient(
+                                        listOf(BillGenOrange, Color(0xFF8B5CF6))
+                                    )
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "BillGen AI Copilot",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    color = Color.White
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    color = Color(0xFF10B981).copy(alpha = 0.2f),
+                                    shape = RoundedCornerShape(4.dp),
+                                    border = BorderStroke(0.6.dp, Color(0xFF10B981))
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 0.5.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(4.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(0xFF10B981))
+                                        )
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text(
+                                            text = "ACTIVE",
+                                            fontSize = 7.sp,
+                                            fontWeight = FontWeight.Black,
+                                            color = Color(0xFF10B981)
+                                        )
+                                    }
+                                }
+                            }
+                            Text(
+                                text = "Hello BillGen bolkar puchiye aaj ki sale ya bill bnao!",
+                                fontSize = 9.sp,
+                                color = Color(0xFF94A3B8)
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = "Chat",
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+
             item {
                 Row(
                     modifier = Modifier

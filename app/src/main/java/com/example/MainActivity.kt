@@ -79,14 +79,114 @@ fun MainAppContent(viewModel: BillGenViewModel) {
         return
     }
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val onboardingPrefs = remember { context.getSharedPreferences("billgen_onboarding_prefs", android.content.Context.MODE_PRIVATE) }
+    var showOnboarding by remember { mutableStateOf(!onboardingPrefs.getBoolean("onboarding_completed", false)) }
+
+    if (showOnboarding) {
+        OnboardingScreen(
+            onFinished = {
+                onboardingPrefs.edit().putBoolean("onboarding_completed", true).apply()
+                showOnboarding = false
+            }
+        )
+        return
+    }
+
+    var recordAudioPermissionGranted by remember {
+        mutableStateOf(
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.RECORD_AUDIO
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    var showAIAgentSheet by remember { mutableStateOf(false) }
+
+    var tts by remember { mutableStateOf<android.speech.tts.TextToSpeech?>(null) }
+    DisposableEffect(context) {
+        var ttsInstance: android.speech.tts.TextToSpeech? = null
+        ttsInstance = android.speech.tts.TextToSpeech(context) { status ->
+            if (status == android.speech.tts.TextToSpeech.SUCCESS) {
+                ttsInstance?.language = java.util.Locale("hi", "IN")
+            }
+        }
+        tts = ttsInstance
+        onDispose {
+            ttsInstance.stop()
+            ttsInstance.shutdown()
+        }
+    }
+
+    LaunchedEffect(viewModel.agentTtsTrigger) {
+        viewModel.agentTtsTrigger.collect { text ->
+            tts?.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, null)
+        }
+    }
+
+    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        recordAudioPermissionGranted = granted
+        if (granted) {
+            android.widget.Toast.makeText(context, "Voice Wake-Word Scanner Active! Say 'Hello BillGen'", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
+    DisposableEffect(recordAudioPermissionGranted, tts) {
+        var voiceHelper: com.example.util.VoiceTriggerHelper? = null
+        if (recordAudioPermissionGranted) {
+            voiceHelper = com.example.util.VoiceTriggerHelper(
+                context = context,
+                onWakeWordDetected = {
+                    try {
+                        val vibrator = context.getSystemService(android.content.Context.VIBRATOR_SERVICE) as? android.os.Vibrator
+                        vibrator?.vibrate(android.os.VibrationEffect.createOneShot(200, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+                    } catch (_: Exception) {}
+                    
+                    tts?.speak("Batao kya karna hai", android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, null)
+                    android.widget.Toast.makeText(context, "BillGen Copilot active! Speak your command...", android.widget.Toast.LENGTH_SHORT).show()
+                    showAIAgentSheet = true
+                },
+                onCommandDetected = { command ->
+                    android.widget.Toast.makeText(context, "Executing: $command", android.widget.Toast.LENGTH_LONG).show()
+                    viewModel.askAgent(command)
+                }
+            )
+            voiceHelper.startListening()
+        } else {
+            permissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+        }
+
+        onDispose {
+            voiceHelper?.stopListening()
+        }
+    }
+
     var currentScreen by remember { mutableStateOf<Screen>(Screen.Dashboard) }
+    var toolsInitialSection by remember { mutableStateOf("catalog") }
+    var isAdminSelectionMade by remember { mutableStateOf(false) }
+    val isAdmin by viewModel.isAdmin.collectAsState()
+    
+    if (isAdmin && !isAdminSelectionMade) {
+        AdminUserSelectionScreen(
+            onNavigateToApp = { isAdminSelectionMade = true },
+            onNavigateToAdminPanel = { 
+                isAdminSelectionMade = true
+                toolsInitialSection = "admin"
+                currentScreen = Screen.Tools 
+            }
+        )
+        return
+    }
+
     var invoiceSubScreen by remember { mutableStateOf(InvoiceSubScreen.EDITOR) }
     var editorInitialMode by remember { mutableStateOf("ai") }
 
     var showRewardedAdDialog by remember { mutableStateOf(false) }
     var showProUpgradeDialog by remember { mutableStateOf(false) }
     var showInterstitialDialog by remember { mutableStateOf(false) }
-    var showAIAgentSheet by remember { mutableStateOf(false) }
     var actionCounter by remember { mutableIntStateOf(0) }
 
     val activePreviewInvoice by viewModel.activePreviewInvoice.collectAsState()
@@ -110,94 +210,6 @@ fun MainAppContent(viewModel: BillGenViewModel) {
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
-        floatingActionButton = {
-            Surface(
-                onClick = { showAIAgentSheet = true },
-                shape = RoundedCornerShape(30.dp),
-                color = Color(0xFF0F172A),
-                border = BorderStroke(
-                    1.2.dp,
-                    Brush.horizontalGradient(
-                        listOf(
-                            Color(0xFF6366F1),
-                            BillGenOrange,
-                            Color(0xFF10B981)
-                        )
-                    )
-                ),
-                shadowElevation = 12.dp,
-                modifier = Modifier
-                    .padding(bottom = 6.dp)
-                    .testTag("floating_bot_icon")
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(
-                                Brush.linearGradient(
-                                    listOf(BillGenOrange, Color(0xFF8B5CF6))
-                                )
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(17.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "BillGen Copilot",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                color = Color.White
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Surface(
-                                color = Color(0xFF10B981).copy(alpha = 0.25f),
-                                shape = RoundedCornerShape(4.dp),
-                                border = BorderStroke(0.8.dp, Color(0xFF10B981))
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(5.dp)
-                                            .clip(CircleShape)
-                                            .background(Color(0xFF10B981))
-                                    )
-                                    Spacer(modifier = Modifier.width(3.dp))
-                                    Text(
-                                        text = "LIVE",
-                                        fontSize = 8.sp,
-                                        fontWeight = FontWeight.Black,
-                                        color = Color(0xFF10B981)
-                                    )
-                                }
-                            }
-                        }
-                        Text(
-                            text = "Autonomous Store AI • Tap to chat",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color(0xFF94A3B8)
-                        )
-                    }
-                }
-            }
-        },
-        floatingActionButtonPosition = FabPosition.End,
         bottomBar = {
             NavigationBar(
                 containerColor = MaterialTheme.colorScheme.surface,
@@ -269,6 +281,9 @@ fun MainAppContent(viewModel: BillGenViewModel) {
                         },
                         onOpenRewardedAd = {
                             showRewardedAdDialog = true
+                        },
+                        onOpenAiAgent = {
+                            showAIAgentSheet = true
                         }
                     )
                 }
@@ -301,6 +316,9 @@ fun MainAppContent(viewModel: BillGenViewModel) {
                                     },
                                     onBack = {
                                         invoiceSubScreen = InvoiceSubScreen.EDITOR
+                                    },
+                                    onOpenProUpgrade = {
+                                        showProUpgradeDialog = true
                                     }
                                 )
                             } else {
@@ -347,6 +365,7 @@ fun MainAppContent(viewModel: BillGenViewModel) {
                 Screen.Tools -> {
                     MoreToolsScreen(
                         viewModel = viewModel,
+                        initialSection = toolsInitialSection,
                         onOpenProUpgrade = {
                             showProUpgradeDialog = true
                         }

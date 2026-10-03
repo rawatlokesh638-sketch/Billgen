@@ -56,6 +56,11 @@ class DailyRetentionHelper(context: Context) {
 
         if (lastDateStr == todayStr) return billingStreak
 
+        // Reset scan credits to 10 daily for Free users on a new day
+        if (userPlanTier == "FREE") {
+            aiScanCredits = 10
+        }
+
         try {
             val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
             if (lastDateStr.isNotBlank()) {

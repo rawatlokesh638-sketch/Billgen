@@ -45,6 +45,15 @@ import com.example.ui.theme.BillGenOrange
 import com.example.util.FormatUtils
 import com.example.util.InvoicePrintHelper
 import com.example.util.SharingHelper
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,7 +62,8 @@ fun InvoicePreviewScreen(
     viewModel: BillGenViewModel,
     onEditInvoice: (InvoiceEntity) -> Unit,
     onNavigateToHistory: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOpenProUpgrade: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -76,6 +86,49 @@ fun InvoicePreviewScreen(
     var editShipToAddress by remember { mutableStateOf(curInvoice.shipToAddress) }
     var editGstinInput by remember { mutableStateOf(curInvoice.businessGstin) }
 
+    val currentTier = remember(viewModel.retentionHelper.userPlanTier) { viewModel.retentionHelper.userPlanTier }
+
+    // State for premium locking dialog
+    var showLockedDialogFor by remember { mutableStateOf<String?>(null) } // "template_xxx" or "color_xxx"
+    var requiredPlanForDialog by remember { mutableStateOf("") }
+
+    // Unlock validation helpers
+    fun isTemplateUnlocked(templateKey: String): Boolean {
+        return when (templateKey) {
+            "premium" -> currentTier == "PREMIUM"
+            "pro_plus" -> currentTier == "PRO_PLUS" || currentTier == "PREMIUM"
+            "pro" -> currentTier == "PRO" || currentTier == "PRO_PLUS" || currentTier == "PREMIUM"
+            else -> true // modern, gst, retail, dark
+        }
+    }
+
+    fun isThemeColorUnlocked(colorKey: String): Boolean {
+        return when (colorKey) {
+            "dark" -> currentTier == "PREMIUM"
+            "rose" -> currentTier == "PRO_PLUS" || currentTier == "PREMIUM"
+            "blue", "purple" -> currentTier == "PRO" || currentTier == "PRO_PLUS" || currentTier == "PREMIUM"
+            else -> true // orange, green are free
+        }
+    }
+
+    fun getRequiredPlanForTemplate(templateKey: String): String {
+        return when (templateKey) {
+            "premium" -> "PREMIUM"
+            "pro_plus" -> "PRO_PLUS"
+            "pro" -> "PRO"
+            else -> "FREE"
+        }
+    }
+
+    fun getRequiredPlanForColor(colorKey: String): String {
+        return when (colorKey) {
+            "dark" -> "PREMIUM"
+            "rose" -> "PRO_PLUS"
+            "blue", "purple" -> "PRO"
+            else -> "FREE"
+        }
+    }
+
     val logoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
@@ -94,7 +147,7 @@ fun InvoicePreviewScreen(
         }
     }
 
-    val primaryColor = when {
+    val rawPrimaryColor = when {
         selectedTemplate.lowercase() == "premium" -> Color(0xFFC59B27)
         selectedTemplate.lowercase() == "pro_plus" || selectedTemplate.lowercase() == "proplus" -> Color(0xFF00875A)
         selectedTemplate.lowercase() == "pro" -> Color(0xFF0052CC)
@@ -109,9 +162,32 @@ fun InvoicePreviewScreen(
         }
     }
 
-    val paperBackground = if (selectedTemplate == "dark" || selectedTemplate == "premium") Color(0xFF17191D) else Color.White
-    val paperTextColor = if (selectedTemplate == "dark" || selectedTemplate == "premium") Color.White else Color(0xFF111827)
-    val paperMutedColor = if (selectedTemplate == "dark" || selectedTemplate == "premium") Color(0xFFA0A5B0) else Color(0xFF6B7280)
+    val primaryColor by animateColorAsState(
+        targetValue = rawPrimaryColor,
+        animationSpec = spring(stiffness = Spring.StiffnessLow),
+        label = "PrimaryColorAnimation"
+    )
+
+    val rawPaperBackground = if (selectedTemplate == "dark" || selectedTemplate == "premium") Color(0xFF17191D) else Color.White
+    val paperBackground by animateColorAsState(
+        targetValue = rawPaperBackground,
+        animationSpec = tween(durationMillis = 350),
+        label = "PaperBackgroundAnimation"
+    )
+
+    val rawPaperTextColor = if (selectedTemplate == "dark" || selectedTemplate == "premium") Color.White else Color(0xFF111827)
+    val paperTextColor by animateColorAsState(
+        targetValue = rawPaperTextColor,
+        animationSpec = tween(durationMillis = 350),
+        label = "PaperTextColorAnimation"
+    )
+
+    val rawPaperMutedColor = if (selectedTemplate == "dark" || selectedTemplate == "premium") Color(0xFFA0A5B0) else Color(0xFF6B7280)
+    val paperMutedColor by animateColorAsState(
+        targetValue = rawPaperMutedColor,
+        animationSpec = tween(durationMillis = 350),
+        label = "PaperMutedColorAnimation"
+    )
 
     val templatesList = listOf(
         "pro" to "⭐ Pro Clean",
@@ -264,25 +340,44 @@ fun InvoicePreviewScreen(
                 ) {
                     items(templatesList) { (key, label) ->
                         val isSelected = selectedTemplate == key
+                        val unlocked = isTemplateUnlocked(key)
                         Surface(
-                            color = if (isSelected) primaryColor else MaterialTheme.colorScheme.surface,
+                            color = if (isSelected) primaryColor else if (!unlocked) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface,
                             shape = RoundedCornerShape(8.dp),
                             border = if (!isSelected) CardDefaults.outlinedCardBorder() else null,
                             modifier = Modifier
                                 .clickable {
-                                    selectedTemplate = key
-                                    val updated = curInvoice.copy(templateName = key, themeColor = selectedTheme)
-                                    viewModel.saveInvoice(updated)
+                                    if (unlocked) {
+                                        selectedTemplate = key
+                                        val updated = curInvoice.copy(templateName = key, themeColor = selectedTheme)
+                                        viewModel.saveInvoice(updated)
+                                    } else {
+                                        requiredPlanForDialog = getRequiredPlanForTemplate(key)
+                                        showLockedDialogFor = "template_$key"
+                                    }
                                 }
                                 .testTag("template_pill_$key")
                         ) {
-                            Text(
-                                text = label,
-                                fontSize = 11.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                            )
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = label,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) Color.White else if (!unlocked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+                                )
+                                if (!unlocked) {
+                                    Icon(
+                                        imageVector = Icons.Default.Lock,
+                                        contentDescription = "Locked",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(11.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -364,21 +459,37 @@ fun InvoicePreviewScreen(
                     "dark" to Color(0xFF17191D)
                 )
                 themes.forEach { (name, color) ->
+                    val unlocked = isThemeColorUnlocked(name)
                     Box(
                         modifier = Modifier
                             .size(24.dp)
                             .clip(CircleShape)
                             .background(color)
                             .clickable {
-                                selectedTheme = name
-                                val updated = curInvoice.copy(templateName = selectedTemplate, themeColor = name)
-                                viewModel.saveInvoice(updated)
+                                if (unlocked) {
+                                    selectedTheme = name
+                                    val updated = curInvoice.copy(templateName = selectedTemplate, themeColor = name)
+                                    viewModel.saveInvoice(updated)
+                                } else {
+                                    requiredPlanForDialog = getRequiredPlanForColor(name)
+                                    showLockedDialogFor = "color_$name"
+                                }
                             }
                             .then(
                                 if (selectedTheme == name) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
                                 else Modifier
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (!unlocked) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = "Locked Color",
+                                tint = Color.White,
+                                modifier = Modifier.size(10.dp)
                             )
-                    )
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.weight(1f))
@@ -799,6 +910,88 @@ fun InvoicePreviewScreen(
                     Toast.makeText(context, "GSTIN removed", Toast.LENGTH_SHORT).show()
                 }) {
                     Text("Remove", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        )
+    }
+
+    // Premium Lock Dialog
+    if (showLockedDialogFor != null) {
+        val isTemplate = showLockedDialogFor!!.startsWith("template_")
+        val itemName = if (isTemplate) {
+            val key = showLockedDialogFor!!.removePrefix("template_")
+            templatesList.firstOrNull { it.first == key }?.second ?: "Premium Template"
+        } else {
+            val key = showLockedDialogFor!!.removePrefix("color_")
+            key.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString() } + " Theme"
+        }
+
+        AlertDialog(
+            onDismissRequest = { showLockedDialogFor = null },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Stars,
+                    contentDescription = "Premium Feature",
+                    tint = Color(0xFFD97706),
+                    modifier = Modifier.size(36.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Unlock $itemName Style",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    textAlign = TextAlign.Center
+                )
+            },
+            text = {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Aapka current FREE plan is style ko support nahi karta.",
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "Is feature ko unlock karne ke liye aapko $requiredPlanForDialog plan ya usse bada active plan chahiye.",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center,
+                        color = Color(0xFF92400E)
+                    )
+                    Text(
+                        text = "Upgrade karke unlimited professional PDF templates, customizable logo, signatures aur active WhatsApp sharing tools ka maza lijiye! ✨",
+                        fontSize = 11.sp,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLockedDialogFor = null
+                        onOpenProUpgrade()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706)),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Stars, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Text("Upgrade Plan Now", fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLockedDialogFor = null }) {
+                    Text("Maybe Later")
                 }
             }
         )

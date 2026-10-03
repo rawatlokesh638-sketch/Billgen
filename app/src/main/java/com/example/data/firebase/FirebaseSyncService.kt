@@ -89,6 +89,16 @@ class FirebaseSyncService {
         }
     }
 
+    suspend fun isAdmin(userId: String): Boolean {
+        val db = database ?: return false
+        return try {
+            val snapshot = db.getReference("admins").child(userId).get().await()
+            snapshot.exists() && snapshot.getValue(Boolean::class.java) == true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     suspend fun pushProductToCloud(userId: String, product: ProductEntity) {
         val ref = userRef(userId) ?: return
         try {

@@ -15,7 +15,11 @@ data class ParsedInvoiceData(
     val paymentStatus: String = "UNPAID",
     val amountPaid: Double = 0.0,
     val notes: String = ""
-)
+) {
+    fun isValid(): Boolean {
+        return items.any { it.name.trim().isNotBlank() && it.price > 0.0 }
+    }
+}
 
 data class CalculationDiscrepancy(
     val expected: Double,

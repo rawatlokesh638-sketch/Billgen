@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import android.app.Activity
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -39,9 +40,11 @@ import com.example.util.SharingHelper
 @Composable
 fun MoreToolsScreen(
     viewModel: BillGenViewModel,
-    onOpenProUpgrade: () -> Unit
+    onOpenProUpgrade: () -> Unit,
+    initialSection: String = "catalog"
 ) {
-    var selectedSection by remember { mutableStateOf("catalog") } // catalog, receipts, quotes, ai, settings
+    val isAdmin by viewModel.isAdmin.collectAsState()
+    var selectedSection by remember { mutableStateOf(initialSection) } // catalog, receipts, quotes, ai, settings
 
     Scaffold(
         topBar = {
@@ -62,7 +65,8 @@ fun MoreToolsScreen(
                     "quotes" -> 2
                     "plans" -> 3
                     "ai" -> 4
-                    else -> 5
+                    "admin" -> 5
+                    else -> 6
                 },
                 edgePadding = 16.dp
             ) {
@@ -71,6 +75,9 @@ fun MoreToolsScreen(
                 Tab(selected = selectedSection == "quotes", onClick = { selectedSection = "quotes" }, text = { Text("📋 Quotations") })
                 Tab(selected = selectedSection == "plans", onClick = { selectedSection = "plans" }, text = { Text("👑 Plans & Buy") })
                 Tab(selected = selectedSection == "ai", onClick = { selectedSection = "ai" }, text = { Text("🤖 AI Assistant") })
+                if (isAdmin) {
+                    Tab(selected = selectedSection == "admin", onClick = { selectedSection = "admin" }, text = { Text("🔑 Admin") })
+                }
                 Tab(selected = selectedSection == "settings", onClick = { selectedSection = "settings" }, text = { Text("⚙ Settings") })
             }
 
@@ -80,6 +87,7 @@ fun MoreToolsScreen(
                 "quotes" -> QuotationsSection(viewModel)
                 "plans" -> SubscriptionPlansContent(viewModel)
                 "ai" -> AiAssistantSection(viewModel)
+                "admin" -> if (isAdmin) AdminPanelSection(viewModel) else ProductCatalogSection(viewModel)
                 "settings" -> SettingsSection(viewModel, onOpenProUpgrade)
             }
         }
@@ -608,6 +616,177 @@ fun SettingsSection(
                 colors = ButtonDefaults.buttonColors(containerColor = BillGenOrange)
             ) {
                 Text("Save Business Profile", fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+fun AdminPanelSection(viewModel: BillGenViewModel) {
+    val requests by viewModel.allAdminSubscriptionRequests.collectAsState()
+    val context = LocalContext.current
+
+    LaunchedEffect(Unit) {
+        viewModel.refreshAdminSubscriptionRequests()
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.VpnKey, contentDescription = null, tint = Color(0xFFFFD700), modifier = Modifier.size(24.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Firebase Admin Configuration Instructions", fontWeight = FontWeight.Black, fontSize = 15.sp, color = Color.White)
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "To manually elevate yourself or any user account to lifetime Pro / Pro Plus in the Firebase Console, follow these quick steps:\n\n" +
+                                "1. Open your Firebase Console web browser page.\n" +
+                                "2. Go to Realtime Database -> Realtime Database nodes.\n" +
+                                "3. Locate or create the node:\n" +
+                                "   users / {userId} / subscriptions / {subscriptionId}\n" +
+                                "4. Inside this node, set / write these key-value fields:\n" +
+                                "   • \"status\": \"APPROVED\"\n" +
+                                "   • \"planType\": \"PRO\" (or \"PRO_PLUS\" or \"PREMIUM\")\n" +
+                                "   • \"expiresAt\": 4102444800000 (Lifetime expiry)\n" +
+                                "5. You can also view or edit pending payments submitted by users directly under 'admin_subscriptions' node.",
+                        fontSize = 11.sp,
+                        color = Color(0xFF94A3B8),
+                        lineHeight = 16.sp
+                    )
+                }
+            }
+        }
+
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Pending Subscription Approvals (${requests.size})", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                IconButton(onClick = { 
+                    viewModel.refreshAdminSubscriptionRequests()
+                    Toast.makeText(context, "Refreshed list!", Toast.LENGTH_SHORT).show()
+                }) {
+                    Icon(imageVector = Icons.Default.Refresh, contentDescription = "Refresh", tint = BillGenOrange)
+                }
+            }
+        }
+
+        if (requests.isEmpty()) {
+            item {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(40.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("No pending or registered subscription requests found.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        } else {
+            items(requests) { req ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    shape = RoundedCornerShape(12.dp),
+                    border = CardDefaults.outlinedCardBorder()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("User: ${req.userEmail}", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text("ID: ${req.userId}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Surface(
+                                color = when (req.status) {
+                                    "APPROVED" -> Color(0xFFE9F8F0)
+                                    "REJECTED" -> Color(0xFFFFECEB)
+                                    else -> Color(0xFFFFF3CD)
+                                },
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = req.status,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = when (req.status) {
+                                        "APPROVED" -> Color(0xFF15945B)
+                                        "REJECTED" -> Color(0xFFD94732)
+                                        else -> Color(0xFF856404)
+                                    },
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Plan: ${req.planType} (${req.billingCycle})", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        Text("UTR / Ref: ${req.utrNumber}", fontSize = 11.sp)
+                        Text("UPI Sender Phone: ${req.paymentPhone}", fontSize = 11.sp)
+                        Text("Amount Paid: ₹${req.amount}", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF15945B))
+
+                        if (req.adminNote.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(4.dp)) {
+                                Text(
+                                    "Note: ${req.adminNote}",
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(6.dp)
+                                )
+                            }
+                        }
+
+                        if (req.status == "PENDING") {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = {
+                                        viewModel.adminApproveSubscriptionRequest(req, "Verified and Approved")
+                                        Toast.makeText(context, "Request Approved!", Toast.LENGTH_SHORT).show()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF15945B)),
+                                    modifier = Modifier.weight(1f).height(36.dp),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Icon(imageVector = Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Approve Pro", fontSize = 11.sp)
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        viewModel.adminRejectSubscriptionRequest(req, "Incorrect UTR / Reference No")
+                                        Toast.makeText(context, "Request Rejected", Toast.LENGTH_SHORT).show()
+                                    },
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFD94732)),
+                                    modifier = Modifier.weight(1f).height(36.dp),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, Color(0xFFD94732))
+                                ) {
+                                    Icon(imageVector = Icons.Default.Close, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Reject", fontSize = 11.sp, color = Color(0xFFD94732))
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

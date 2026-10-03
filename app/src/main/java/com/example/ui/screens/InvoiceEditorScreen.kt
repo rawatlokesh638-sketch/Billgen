@@ -5,9 +5,11 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -35,6 +37,13 @@ import com.example.data.model.ProductEntity
 import com.example.ui.BillGenViewModel
 import com.example.ui.theme.BillGenOrange
 import com.example.util.FormatUtils
+import android.content.Context
+import android.os.Vibrator
+import android.os.VibrationEffect
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.lazy.LazyRow
+import kotlinx.coroutines.delay
+import android.graphics.Bitmap
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,6 +56,17 @@ fun InvoiceEditorScreen(
     var builderMode by remember { mutableStateOf(initialMode) }
     var pastedText by remember { mutableStateOf("") }
     var showCatalogDialog by remember { mutableStateOf<Int?>(null) }
+
+    var aiSubTab by remember { mutableStateOf("single") } // single, multi, camera
+    var autoScanActive by remember { mutableStateOf(false) }
+
+    val isMultiExtracting by viewModel.isMultiExtracting.collectAsState()
+    val multiProgressMessage by viewModel.multiProgressMessage.collectAsState()
+    val multiGeneratedInvoices by viewModel.multiGeneratedInvoices.collectAsState()
+
+    val isCameraScanning by viewModel.isCameraScanning.collectAsState()
+    val cameraScanProgress by viewModel.cameraScanProgress.collectAsState()
+    val cameraScanInvoices by viewModel.cameraScanInvoices.collectAsState()
 
     val customerName by viewModel.editorCustomerName.collectAsState()
     val customerPhone by viewModel.editorCustomerPhone.collectAsState()
@@ -91,6 +111,14 @@ fun InvoiceEditorScreen(
         }
     }
 
+    val multiPhotoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            viewModel.processMultiScreenshots(context, uris)
+        }
+    }
+
     val logoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
@@ -101,6 +129,47 @@ fun InvoiceEditorScreen(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         uri?.let { viewModel.editorPhotoUri.value = it.toString() }
+    }
+
+    var cameraPhotoUri by remember { mutableStateOf<Uri?>(null) }
+
+    val takePictureLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success: Boolean ->
+        if (success && cameraPhotoUri != null) {
+            try {
+                context.contentResolver.openInputStream(cameraPhotoUri!!)?.use { stream ->
+                    val bmp = BitmapFactory.decodeStream(stream)
+                    viewModel.processCameraScan(bmp, context) { generated ->
+                        if (generated != null) {
+                            Toast.makeText(context, "Real-time Scan Success! Saved Bill #${generated.invoiceNo}", Toast.LENGTH_LONG).show()
+                        } else {
+                            Toast.makeText(context, "Scanning failed: No readable invoice text or items found.", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "Failed to load captured photo: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    val createTempImageUri = remember {
+        { ctx: Context ->
+            try {
+                val tempFile = java.io.File.createTempFile("billgen_capture_", ".jpg", ctx.cacheDir).apply {
+                    createNewFile()
+                    deleteOnExit()
+                }
+                androidx.core.content.FileProvider.getUriForFile(
+                    ctx,
+                    "${ctx.packageName}.fileprovider",
+                    tempFile
+                )
+            } catch (e: Exception) {
+                null
+            }
+        }
     }
 
     val calculation = remember(items, discount, shipping, roundoff, gstRate, gstType, gstMode, amountPaid, dueDate) {
@@ -219,122 +288,383 @@ fun InvoiceEditorScreen(
                         border = CardDefaults.outlinedCardBorder()
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
+                            // Sub-Tabs Header
                             Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.AutoAwesome,
-                                        contentDescription = null,
-                                        tint = BillGenOrange,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Screenshot → Invoice", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                }
-
-                                TextButton(
-                                    onClick = {
-                                        pastedText = "Amit Sharma\nPhone: 9876543210\nRewari, Haryana\n2 T-shirt 599\n1 Jeans 999\n1 Cap 299\nDiscount 100\nPaid by UPI"
-                                    }
-                                ) {
-                                    Text("Load Demo", fontSize = 11.sp, color = BillGenOrange)
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(if (selectedBitmap != null) 150.dp else 110.dp)
-                                    .clip(RoundedCornerShape(12.dp))
+                                    .clip(RoundedCornerShape(8.dp))
                                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                                    .clickable {
-                                        photoPickerLauncher.launch(
-                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                        )
-                                    },
-                                contentAlignment = Alignment.Center
+                                    .padding(3.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                if (selectedBitmap != null) {
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        modifier = Modifier.padding(8.dp)
+                                listOf(
+                                    Triple("single", "✨ Single Scan", Icons.Default.AutoAwesome),
+                                    Triple("multi", "📸 Multi Scan", Icons.Default.PhotoLibrary),
+                                    Triple("camera", "🎥 Live Camera", Icons.Default.Videocam)
+                                ).forEach { (tabId, label, icon) ->
+                                    val isSelected = aiSubTab == tabId
+                                    Surface(
+                                        color = if (isSelected) BillGenOrange else Color.Transparent,
+                                        shape = RoundedCornerShape(6.dp),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable { aiSubTab = tabId }
                                     ) {
-                                        Image(
-                                            bitmap = selectedBitmap!!.asImageBitmap(),
-                                            contentDescription = "Selected Screenshot",
-                                            modifier = Modifier
-                                                .height(95.dp)
-                                                .clip(RoundedCornerShape(8.dp))
-                                        )
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        Text(
-                                            text = "Screenshot loaded • Tap to change",
-                                            fontSize = 11.sp,
-                                            color = BillGenOrange,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                } else {
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Icon(
-                                            imageVector = Icons.Default.CloudUpload,
-                                            contentDescription = "Upload",
-                                            tint = BillGenOrange,
-                                            modifier = Modifier.size(32.dp)
-                                        )
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        Text("Tap to choose screenshot or bill photo", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                        Text("WhatsApp chats, paper bills, handwritten orders", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Row(
+                                            modifier = Modifier.padding(vertical = 8.dp),
+                                            horizontalArrangement = Arrangement.Center,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = icon,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(14.dp),
+                                                tint = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = label,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
                                     }
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(10.dp))
+                            Spacer(modifier = Modifier.height(14.dp))
 
-                            OutlinedTextField(
-                                value = pastedText,
-                                onValueChange = { pastedText = it },
-                                label = { Text("Or paste order message / text here...") },
-                                placeholder = { Text("e.g. Rahul, 2 T-shirt 599, 1 Jeans 999, discount 100") },
-                                modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp),
-                                textStyle = LocalTextStyle.current.copy(fontSize = 12.sp)
-                            )
+                            // Credit limits and Plan Tier Badge
+                            val currentTier = viewModel.retentionHelper.userPlanTier
+                            val credits = viewModel.retentionHelper.aiScanCredits
+                            Surface(
+                                color = if (currentTier != "FREE") Color(0xFFFEF3C7) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    if (currentTier != "FREE") {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(imageVector = Icons.Default.Stars, contentDescription = null, tint = Color(0xFFD97706), modifier = Modifier.size(15.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Unlimited Pro AI Scans Activated", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color(0xFF92400E))
+                                        }
+                                        Surface(color = Color(0xFFD97706), shape = RoundedCornerShape(4.dp)) {
+                                            Text("PRO", fontSize = 8.sp, fontWeight = FontWeight.Black, color = Color.White, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                        }
+                                    } else {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(imageVector = Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Daily AI scan credits: 10 daily", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                        Text("Remaining: $credits", fontSize = 11.sp, fontWeight = FontWeight.Black, color = BillGenOrange)
+                                    }
+                                }
+                            }
 
                             Spacer(modifier = Modifier.height(12.dp))
 
-                            Button(
-                                onClick = { viewModel.extractInvoiceWithAi(pastedText) },
-                                enabled = !isExtracting && (selectedBitmap != null || pastedText.isNotBlank()),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(44.dp)
-                                    .testTag("extract_with_gemini_button"),
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = BillGenOrange)
-                            ) {
-                                if (isExtracting) {
-                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Extracting with Gemini AI...", fontSize = 13.sp)
-                                } else {
-                                    Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("✨ Extract with Gemini AI", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
+                            // Sub-Tab Content Rendering
+                            when (aiSubTab) {
+                                "single" -> {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("Single Screenshot → Invoice", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        TextButton(onClick = {
+                                            pastedText = "Amit Sharma\nPhone: 9876543210\nRewari, Haryana\n2 T-shirt 599\n1 Jeans 999\n1 Cap 299\nDiscount 100\nPaid by UPI"
+                                        }) {
+                                            Text("Load Demo", fontSize = 11.sp, color = BillGenOrange)
+                                        }
+                                    }
 
-                            if (aiStatusMessage.isNotBlank()) {
-                                Text(
-                                    text = aiStatusMessage,
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(top = 6.dp)
-                                )
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(if (selectedBitmap != null) 140.dp else 100.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                            .clickable {
+                                                photoPickerLauncher.launch(
+                                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                                )
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (selectedBitmap != null) {
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(8.dp)) {
+                                                Image(
+                                                    bitmap = selectedBitmap!!.asImageBitmap(),
+                                                    contentDescription = "Selected Image",
+                                                    modifier = Modifier.height(85.dp).clip(RoundedCornerShape(6.dp))
+                                                )
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text("Screenshot loaded • Tap to change", fontSize = 10.sp, color = BillGenOrange, fontWeight = FontWeight.Bold)
+                                            }
+                                        } else {
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Icon(Icons.Default.CloudUpload, contentDescription = null, tint = BillGenOrange, modifier = Modifier.size(28.dp))
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text("Tap to choose single screenshot or bill photo", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                                Text("WhatsApp screenshot, paper bills, hand bills", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    OutlinedTextField(
+                                        value = pastedText,
+                                        onValueChange = { pastedText = it },
+                                        label = { Text("Or paste order message / text...") },
+                                        placeholder = { Text("e.g. Rahul, 2 T-shirt 599, 1 Jeans 999, discount 100") },
+                                        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
+                                        textStyle = LocalTextStyle.current.copy(fontSize = 11.sp)
+                                    )
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    Button(
+                                        onClick = { viewModel.extractInvoiceWithAi(pastedText) },
+                                        enabled = !isExtracting && (selectedBitmap != null || pastedText.isNotBlank()),
+                                        modifier = Modifier.fillMaxWidth().height(42.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = BillGenOrange)
+                                    ) {
+                                        if (isExtracting) {
+                                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Extracting with Gemini AI...", fontSize = 12.sp)
+                                        } else {
+                                            Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Extract with Gemini AI", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+
+                                    if (aiStatusMessage.isNotBlank()) {
+                                        Text(text = aiStatusMessage, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+                                    }
+                                }
+
+                                "multi" -> {
+                                    Text("Multi-Screenshot Invoice Creator", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    Text("Ek baar me multiple screenshots attach karke un sabke invoices background me bna lijiye.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    if (isMultiExtracting) {
+                                        Surface(
+                                            color = Color(0xFFEFF6FF),
+                                            border = BorderStroke(1.dp, Color(0xFF3B82F6)),
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Color(0xFF3B82F6))
+                                                Spacer(modifier = Modifier.width(10.dp))
+                                                Column {
+                                                    Text("Processing Batch Invoices...", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF1E3A8A))
+                                                    Text(multiProgressMessage, fontSize = 11.sp, color = Color(0xFF1E3A8A))
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        Button(
+                                            onClick = {
+                                                multiPhotoPickerLauncher.launch(
+                                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                                )
+                                            },
+                                            modifier = Modifier.fillMaxWidth().height(44.dp),
+                                            shape = RoundedCornerShape(10.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB))
+                                        ) {
+                                            Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text("Select Multiple Screenshots", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        }
+                                    }
+
+                                    if (multiGeneratedInvoices.isNotEmpty()) {
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        Text("Generated Batch Invoices (${multiGeneratedInvoices.size}):", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF15945B))
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                            items(multiGeneratedInvoices) { inv ->
+                                                Surface(
+                                                    color = Color(0xFFECFDF5),
+                                                    border = BorderStroke(1.dp, Color(0xFF10B981)),
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    modifier = Modifier.clickable {
+                                                        viewModel.setPreviewInvoice(inv)
+                                                        onInvoiceGenerated(inv)
+                                                    }
+                                                ) {
+                                                    Column(modifier = Modifier.padding(8.dp)) {
+                                                        Text("No: ${inv.invoiceNo}", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color(0xFF065F46))
+                                                        Text("To: ${inv.customerName}", fontSize = 10.sp, color = Color(0xFF065F46))
+                                                        Text("Total: ₹${inv.total.toInt()}", fontWeight = FontWeight.Black, fontSize = 10.sp, color = Color(0xFF065F46))
+                                                        Spacer(modifier = Modifier.height(4.dp))
+                                                        Text("Tap to View 👁", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF059669))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                "camera" -> {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("Real Mobile Camera Scanner 📸", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        Surface(
+                                            color = Color(0xFFE0F2FE),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = "HD Quality",
+                                                color = Color(0xFF0369A1),
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 9.sp,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(140.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                            .clickable {
+                                                val uri = createTempImageUri(context)
+                                                if (uri != null) {
+                                                    cameraPhotoUri = uri
+                                                    takePictureLauncher.launch(uri)
+                                                } else {
+                                                    Toast.makeText(context, "Error: Camera permissions or file context missing.", Toast.LENGTH_SHORT).show()
+                                                }
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(16.dp)) {
+                                            Icon(
+                                                imageVector = Icons.Default.PhotoCamera,
+                                                contentDescription = "Camera",
+                                                tint = BillGenOrange,
+                                                modifier = Modifier.size(36.dp)
+                                            )
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Text(
+                                                text = "Tap to Launch Real Camera",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                text = "Point at any page, paper bill, or receipts",
+                                                fontSize = 10.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    Button(
+                                        onClick = {
+                                            val uri = createTempImageUri(context)
+                                            if (uri != null) {
+                                                cameraPhotoUri = uri
+                                                takePictureLauncher.launch(uri)
+                                            } else {
+                                                Toast.makeText(context, "Error: Camera file context missing.", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        enabled = !isCameraScanning,
+                                        modifier = Modifier.fillMaxWidth().height(42.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = BillGenOrange)
+                                    ) {
+                                        if (isCameraScanning) {
+                                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Scanning captured page...", fontSize = 12.sp)
+                                        } else {
+                                            Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Launch Real Camera Scan", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+
+                                    if (isCameraScanning || cameraScanProgress.isNotBlank()) {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Surface(
+                                            color = Color(0xFFF0FDF4),
+                                            border = BorderStroke(1.dp, Color(0xFF10B981)),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color(0xFF10B981))
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Column {
+                                                    Text(
+                                                        text = "Extracting page with Gemini AI...",
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color(0xFF047857)
+                                                    )
+                                                    Text(cameraScanProgress, fontSize = 10.sp, color = Color(0xFF047857))
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if (cameraScanInvoices.isNotEmpty()) {
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        Text("Camera Invoices Scanned this Session (${cameraScanInvoices.size}):", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF10B981))
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                            items(cameraScanInvoices) { inv ->
+                                                Surface(
+                                                    color = Color(0xFFF0FDF4),
+                                                    border = BorderStroke(1.dp, Color(0xFF10B981)),
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    modifier = Modifier.clickable {
+                                                        viewModel.setPreviewInvoice(inv)
+                                                        onInvoiceGenerated(inv)
+                                                    }
+                                                ) {
+                                                    Column(modifier = Modifier.padding(8.dp)) {
+                                                        Text("No: ${inv.invoiceNo}", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color(0xFF065F46))
+                                                        Text("To: ${inv.customerName}", fontSize = 10.sp, color = Color(0xFF065F46))
+                                                        Text("Total: ₹${inv.total.toInt()}", fontWeight = FontWeight.Black, fontSize = 10.sp, color = Color(0xFF065F46))
+                                                        Spacer(modifier = Modifier.height(4.dp))
+                                                        Text("View 👁", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF059669))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

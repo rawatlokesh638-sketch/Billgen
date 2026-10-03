@@ -3,6 +3,7 @@ package com.example.ui
 import android.app.Application
 import android.content.Context
 import android.graphics.Bitmap
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -59,6 +60,7 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
 
     val isAgentThinking = MutableStateFlow(false)
     val agentLiveActionStep = MutableStateFlow<String?>(null)
+    val agentTtsTrigger = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 1)
 
     private val prefs = application.getSharedPreferences("billgen_business_profile", Context.MODE_PRIVATE)
     private val authPrefs = application.getSharedPreferences("billgen_auth_session", Context.MODE_PRIVATE)
@@ -95,6 +97,7 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val allAdminSubscriptionRequests = MutableStateFlow<List<com.example.data.model.SubscriptionRequest>>(emptyList())
+    val isAdmin = MutableStateFlow(false)
 
     private val _businessProfile = MutableStateFlow(loadBusinessProfile())
     val businessProfile: StateFlow<BusinessProfile> = _businessProfile.asStateFlow()
@@ -135,6 +138,14 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
     private val _isExtracting = MutableStateFlow(false)
     val isExtracting: StateFlow<Boolean> = _isExtracting.asStateFlow()
 
+    val isMultiExtracting = MutableStateFlow(false)
+    val multiProgressMessage = MutableStateFlow("")
+    val multiGeneratedInvoices = MutableStateFlow<List<InvoiceEntity>>(emptyList())
+
+    val isCameraScanning = MutableStateFlow(false)
+    val cameraScanProgress = MutableStateFlow("")
+    val cameraScanInvoices = MutableStateFlow<List<InvoiceEntity>>(emptyList())
+
     private val _aiStatusMessage = MutableStateFlow("")
     val aiStatusMessage: StateFlow<String> = _aiStatusMessage.asStateFlow()
 
@@ -151,6 +162,7 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
             try {
                 if (authManager.isUserLoggedIn) {
                     syncDataFromCloud()
+                    isAdmin.value = syncService.isAdmin(authManager.currentUserId)
                 }
             } catch (e: Exception) {
                 Log.w("BillGenViewModel", "Background sync init error: ${e.message}")
@@ -174,6 +186,7 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
                     .apply()
                 _isSessionLoggedIn.value = true
                 syncDataFromCloud()
+                isAdmin.value = syncService.isAdmin(user.uid)
                 onResult(true, "Account created successfully")
             }.onFailure { err ->
                 val errorMsg = err.message ?: "Signup error"
@@ -193,6 +206,7 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
                     .apply()
                 _isSessionLoggedIn.value = true
                 syncDataFromCloud()
+                isAdmin.value = syncService.isAdmin(authManager.currentUserId)
                 onResult(true, "Login successful")
             }.onFailure { err ->
                 val errorMsg = err.message ?: "Login error"
@@ -511,6 +525,185 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
             }
 
             _isExtracting.value = false
+        }
+    }
+
+    fun processMultiScreenshots(context: Context, uris: List<Uri>, onCompleted: () -> Unit = {}) {
+        viewModelScope.launch {
+            isMultiExtracting.value = true
+            multiProgressMessage.value = "Starting multi-screenshot batch processing..."
+            val list = mutableListOf<InvoiceEntity>()
+            multiGeneratedInvoices.value = emptyList()
+
+            uris.forEachIndexed { index, uri ->
+                val stepNum = index + 1
+                multiProgressMessage.value = "Processing image $stepNum of ${uris.size}..."
+
+                val hasCredit = retentionHelper.consumeAiScanCredit()
+                if (!hasCredit) {
+                    multiProgressMessage.value = "Limit reached. Image $stepNum skipped due to out of credits."
+                    delay(1500)
+                    return@forEachIndexed
+                }
+
+                // Decode bitmap
+                val bmp = try {
+                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                        android.graphics.BitmapFactory.decodeStream(stream)
+                    }
+                } catch (e: Exception) {
+                    null
+                }
+
+                if (bmp == null) {
+                    multiProgressMessage.value = "Image $stepNum failed to decode. Skipped."
+                    delay(1000)
+                    return@forEachIndexed
+                }
+
+                // Call Gemini Service
+                val result = geminiService.extractInvoice(bitmap = bmp)
+                result.onSuccess { data ->
+                    if (!data.isValid()) {
+                        multiProgressMessage.value = "Image $stepNum skipped: No readable bill content found."
+                        delay(1500)
+                        return@onSuccess
+                    }
+                    val prof = _businessProfile.value
+                    val nextNumStr = FormatUtils.generateNextInvoiceNumber(prof.invoicePrefix, prof.nextInvoiceNumber)
+                    val calculation = FormatUtils.calculateInvoice(
+                        items = data.items,
+                        discount = data.discount,
+                        shipping = data.shipping,
+                        roundoff = 0.0,
+                        gstRate = data.gstRate,
+                        gstType = "CGST/SGST",
+                        gstMode = "EXCLUSIVE",
+                        amountPaid = data.amountPaid,
+                        dueDate = ""
+                    )
+
+                    val invoice = InvoiceEntity(
+                        id = "inv_${System.currentTimeMillis()}_$index",
+                        invoiceNo = nextNumStr,
+                        date = FormatUtils.currentDateFormatted(),
+                        customerName = data.customerName.ifBlank { "Customer $stepNum" },
+                        customerPhone = data.customerPhone,
+                        customerAddress = data.customerAddress,
+                        businessName = prof.businessName,
+                        itemsJson = Converters().fromLineItemList(data.items),
+                        subtotal = calculation.subtotal,
+                        discount = calculation.discount,
+                        shipping = calculation.shipping,
+                        gstRate = calculation.gstRate,
+                        total = calculation.total,
+                        paymentStatus = data.paymentStatus,
+                        paymentMethod = data.paymentMethod,
+                        amountPaid = data.amountPaid,
+                        notes = data.notes.ifBlank { "Auto-generated from Multi-Screenshot AI Scan" },
+                        templateName = "modern",
+                        themeColor = "orange",
+                        currency = prof.defaultCurrency,
+                        createdAt = System.currentTimeMillis(),
+                        updatedAt = System.currentTimeMillis()
+                    )
+
+                    invoiceDao.insertInvoice(invoice)
+                    syncService.pushInvoiceToCloud(authManager.currentUserId, invoice)
+                    incrementNextInvoiceNumber()
+                    list.add(invoice)
+                    multiProgressMessage.value = "✓ Image $stepNum complete! Generated: $nextNumStr"
+                    delay(1200)
+                }.onFailure { error ->
+                    multiProgressMessage.value = "Image $stepNum failed: ${error.message}"
+                    delay(1500)
+                }
+            }
+
+            multiGeneratedInvoices.value = list
+            isMultiExtracting.value = false
+            multiProgressMessage.value = ""
+            onCompleted()
+        }
+    }
+
+    fun processCameraScan(bitmap: Bitmap, context: Context, onCompleted: (InvoiceEntity?) -> Unit) {
+        viewModelScope.launch {
+            isCameraScanning.value = true
+            cameraScanProgress.value = "Scanning captured document page..."
+
+            val hasCredit = retentionHelper.consumeAiScanCredit()
+            if (!hasCredit) {
+                cameraScanProgress.value = "Out of daily scan credits."
+                isCameraScanning.value = false
+                onCompleted(null)
+                return@launch
+            }
+
+            // Call Gemini
+            val result = geminiService.extractInvoice(bitmap = bitmap)
+            result.onSuccess { data ->
+                if (!data.isValid()) {
+                    cameraScanProgress.value = "Scanning failed: No valid invoice details found."
+                    isCameraScanning.value = false
+                    onCompleted(null)
+                    return@launch
+                }
+                val prof = _businessProfile.value
+                val nextNumStr = FormatUtils.generateNextInvoiceNumber(prof.invoicePrefix, prof.nextInvoiceNumber)
+                val calculation = FormatUtils.calculateInvoice(
+                    items = data.items,
+                    discount = data.discount,
+                    shipping = data.shipping,
+                    roundoff = 0.0,
+                    gstRate = data.gstRate,
+                    gstType = "CGST/SGST",
+                    gstMode = "EXCLUSIVE",
+                    amountPaid = data.amountPaid,
+                    dueDate = ""
+                )
+
+                val invoice = InvoiceEntity(
+                    id = "inv_${System.currentTimeMillis()}",
+                    invoiceNo = nextNumStr,
+                    date = FormatUtils.currentDateFormatted(),
+                    customerName = data.customerName.ifBlank { "Live Camera Customer" },
+                    customerPhone = data.customerPhone,
+                    customerAddress = data.customerAddress,
+                    businessName = prof.businessName,
+                    itemsJson = Converters().fromLineItemList(data.items),
+                    subtotal = calculation.subtotal,
+                    discount = calculation.discount,
+                    shipping = calculation.shipping,
+                    gstRate = calculation.gstRate,
+                    total = calculation.total,
+                    paymentStatus = data.paymentStatus,
+                    paymentMethod = data.paymentMethod,
+                    amountPaid = data.amountPaid,
+                    notes = data.notes.ifBlank { "Auto-generated from Live Camera Document Scanner" },
+                    templateName = "modern",
+                    themeColor = "orange",
+                    currency = prof.defaultCurrency,
+                    createdAt = System.currentTimeMillis(),
+                    updatedAt = System.currentTimeMillis()
+                )
+
+                invoiceDao.insertInvoice(invoice)
+                syncService.pushInvoiceToCloud(authManager.currentUserId, invoice)
+                incrementNextInvoiceNumber()
+
+                val currentList = cameraScanInvoices.value.toMutableList()
+                currentList.add(invoice)
+                cameraScanInvoices.value = currentList
+
+                cameraScanProgress.value = "✓ Generated Invoice $nextNumStr"
+                isCameraScanning.value = false
+                onCompleted(invoice)
+            }.onFailure { error ->
+                cameraScanProgress.value = "Scan failed: ${error.message}"
+                isCameraScanning.value = false
+                onCompleted(null)
+            }
         }
     }
 
@@ -1060,14 +1253,17 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
                         actionType = response.actionSummary
                     )
                 )
+                agentTtsTrigger.tryEmit(cleanedText)
             } catch (e: Exception) {
                 agentLiveActionStep.value = null
+                val errText = "Maaf kijiye, main abhi process nahi kar pa raha hoon: ${e.message}"
                 agentMessageDao.insertMessage(
                     AgentMessageEntity(
                         sender = "agent",
-                        text = "Maaf kijiye, main abhi process nahi kar pa raha hoon: ${e.message}"
+                        text = errText
                     )
                 )
+                agentTtsTrigger.tryEmit(errText)
             } finally {
                 agentLiveActionStep.value = null
                 isAgentThinking.value = false

@@ -25,6 +25,9 @@ class GeminiInvoiceService {
     private val extractionPrompt = """
         You are an intelligent billing and invoice extraction engine.
         Inspect the provided screenshot, invoice photo, bill image, or pasted order text.
+        
+        CRITICAL RULE: If the image does NOT contain a billing document, paper bill, receipt, order list, or payment statement (e.g. if it is a photo of random objects like a mouse, table, wall, scenery, animal, person, or blank paper), you MUST return an empty JSON object: {}
+        
         Extract and return ONLY a valid JSON object matching this structure:
         {
           "customerName": "Customer Name or empty",
@@ -148,7 +151,7 @@ class GeminiInvoiceService {
                 }
             }
 
-            val finalItems = if (itemsList.isNotEmpty()) itemsList else listOf(LineItem(name = "Item 1", qty = 1.0, price = 0.0))
+            val finalItems = itemsList
 
             Result.success(
                 ParsedInvoiceData(
