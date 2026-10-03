@@ -1,0 +1,18 @@
+{
+  "app_config": {
+    "app_name": "BillGen AI",
+    "latest_version": "1.0.0",
+    "min_required_version": "1.0.0",
+    "maintenance_mode": false,
+    "support_whatsapp": "",
+    "support_email": "rawatlokesh638@gmail.com",
+    "announcement_banner": "Welcome to BillGen AI"
+  },
+  "admin_analytics": {
+    "total_registered_merchants": 0,
+    "total_invoices_generated": 0,
+    "total_sales_volume_inr": 0.0,
+    "last_updated": 0
+  },
+  "users": {}
+}

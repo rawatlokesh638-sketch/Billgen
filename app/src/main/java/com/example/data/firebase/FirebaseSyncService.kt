@@ -291,6 +291,89 @@ class FirebaseSyncService {
         }
     }
 
+    suspend fun pushQuotationToCloud(userId: String, quotation: QuotationEntity) {
+        val ref = userRef(userId) ?: return
+        try {
+            val map = HashMap<String, Any?>().apply {
+                put("id", quotation.id)
+                put("quoteNo", quotation.quoteNo)
+                put("date", quotation.date)
+                put("customerName", quotation.customerName)
+                put("customerPhone", quotation.customerPhone)
+                put("customerAddress", quotation.customerAddress)
+                put("businessName", quotation.businessName)
+                put("itemsJson", quotation.itemsJson)
+                put("subtotal", quotation.subtotal)
+                put("discount", quotation.discount)
+                put("gstRate", quotation.gstRate)
+                put("total", quotation.total)
+                put("status", quotation.status)
+                put("notes", quotation.notes)
+                put("createdAt", quotation.createdAt)
+            }
+            ref.child("quotations").child(quotation.id).setValue(map).await()
+        } catch (e: Exception) {
+            Log.e("FirebaseSync", "Error uploading quotation: ${e.message}")
+        }
+    }
+
+    suspend fun deleteQuotationFromCloud(userId: String, quotationId: String) {
+        val ref = userRef(userId) ?: return
+        try {
+            ref.child("quotations").child(quotationId).removeValue().await()
+        } catch (e: Exception) {
+            Log.e("FirebaseSync", "Error deleting quotation: ${e.message}")
+        }
+    }
+
+    suspend fun fetchAllQuotationsFromCloud(userId: String): List<QuotationEntity> {
+        val ref = userRef(userId) ?: return emptyList()
+        return try {
+            val snapshot = ref.child("quotations").get().await()
+            val list = mutableListOf<QuotationEntity>()
+            for (child in snapshot.children) {
+                val id = child.child("id").getValue(String::class.java) ?: child.key ?: continue
+                val quoteNo = child.child("quoteNo").getValue(String::class.java) ?: "QUO-001"
+                val date = child.child("date").getValue(String::class.java) ?: ""
+                val cName = child.child("customerName").getValue(String::class.java) ?: ""
+                val cPhone = child.child("customerPhone").getValue(String::class.java) ?: ""
+                val cAddr = child.child("customerAddress").getValue(String::class.java) ?: ""
+                val bName = child.child("businessName").getValue(String::class.java) ?: ""
+                val itemsJson = child.child("itemsJson").getValue(String::class.java) ?: "[]"
+                val subtotal = child.child("subtotal").getValue(Double::class.java) ?: 0.0
+                val discount = child.child("discount").getValue(Double::class.java) ?: 0.0
+                val gstRate = child.child("gstRate").getValue(Double::class.java) ?: 0.0
+                val total = child.child("total").getValue(Double::class.java) ?: 0.0
+                val status = child.child("status").getValue(String::class.java) ?: "Draft"
+                val notes = child.child("notes").getValue(String::class.java) ?: ""
+                val created = child.child("createdAt").getValue(Long::class.java) ?: System.currentTimeMillis()
+
+                list.add(
+                    QuotationEntity(
+                        id = id,
+                        quoteNo = quoteNo,
+                        date = date,
+                        customerName = cName,
+                        customerPhone = cPhone,
+                        customerAddress = cAddr,
+                        businessName = bName,
+                        itemsJson = itemsJson,
+                        subtotal = subtotal,
+                        discount = discount,
+                        gstRate = gstRate,
+                        total = total,
+                        status = status,
+                        notes = notes,
+                        createdAt = created
+                    )
+                )
+            }
+            list
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
     suspend fun fetchProfileFromCloud(userId: String): BusinessProfile? {
         val ref = userRef(userId) ?: return null
         return try {

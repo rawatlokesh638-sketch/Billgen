@@ -221,6 +221,11 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
                     productDao.insertProduct(p)
                 }
 
+                val cloudQuotations = syncService.fetchAllQuotationsFromCloud(uid)
+                for (q in cloudQuotations) {
+                    quotationDao.insertQuotation(q)
+                }
+
                 val cloudProfile = syncService.fetchProfileFromCloud(uid)
                 if (cloudProfile != null) {
                     _businessProfile.value = cloudProfile
@@ -255,6 +260,11 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
                 val receipts = allReceipts.value
                 for (r in receipts) {
                     syncService.pushReceiptToCloud(uid, r)
+                }
+
+                val quotations = allQuotations.value
+                for (q in quotations) {
+                    syncService.pushQuotationToCloud(uid, q)
                 }
 
                 syncService.pushBusinessProfileToCloud(uid, _businessProfile.value)
@@ -601,6 +611,7 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
     fun createQuotation(quotation: QuotationEntity) {
         viewModelScope.launch {
             quotationDao.insertQuotation(quotation)
+            syncService.pushQuotationToCloud(authManager.currentUserId, quotation)
         }
     }
 
@@ -635,6 +646,7 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
     fun deleteQuotation(quotation: QuotationEntity) {
         viewModelScope.launch {
             quotationDao.deleteQuotationById(quotation.id)
+            syncService.deleteQuotationFromCloud(authManager.currentUserId, quotation.id)
         }
     }
 
