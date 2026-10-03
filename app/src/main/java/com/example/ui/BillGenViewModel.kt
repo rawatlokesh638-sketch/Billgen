@@ -133,7 +133,11 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
                 syncDataFromCloud()
                 onResult(true, "Account created successfully")
             }.onFailure { err ->
-                onResult(false, err.message ?: "Signup error")
+                val errorMsg = err.message ?: "Signup error"
+                val friendlyMsg = if (errorMsg.contains("service unavailable", ignoreCase = true)) {
+                    "Cloud auth unavailable. Tap 'Continue as Guest Merchant' for Offline Billing."
+                } else errorMsg
+                onResult(false, friendlyMsg)
             }
         }
     }
@@ -145,18 +149,28 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
                 syncDataFromCloud()
                 onResult(true, "Login successful")
             }.onFailure { err ->
-                onResult(false, err.message ?: "Login error")
+                val errorMsg = err.message ?: "Login error"
+                val friendlyMsg = if (errorMsg.contains("service unavailable", ignoreCase = true)) {
+                    "Cloud auth unavailable. Tap 'Continue as Guest Merchant' for Offline Billing."
+                } else errorMsg
+                onResult(false, friendlyMsg)
             }
         }
     }
 
     fun signInAsGuest(onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
-            val res = authManager.signInAnonymously()
-            res.onSuccess {
-                onResult(true, "Logged in as Guest")
-            }.onFailure { err ->
-                onResult(false, err.message ?: "Guest login error")
+            try {
+                val res = authManager.signInAnonymously()
+                res.onSuccess {
+                    onResult(true, "Logged in as Guest Merchant")
+                }.onFailure {
+                    // Fallback to local offline Room database mode seamlessly
+                    onResult(true, "Entered Guest Mode (Offline Room Database)")
+                }
+            } catch (e: Exception) {
+                // Guaranteed entry to local database mode even if exceptions occur
+                onResult(true, "Entered Guest Mode (Offline Room Database)")
             }
         }
     }

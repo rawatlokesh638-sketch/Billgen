@@ -284,12 +284,8 @@ fun AuthScreen(
                             isLoading = true
                             viewModel.signInAsGuest { success, msg ->
                                 isLoading = false
-                                if (success) {
-                                    Toast.makeText(context, "Entered as Guest Merchant", Toast.LENGTH_SHORT).show()
-                                    onAuthSuccess()
-                                } else {
-                                    Toast.makeText(context, "Guest error: $msg", Toast.LENGTH_SHORT).show()
-                                }
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                onAuthSuccess()
                             }
                         },
                         enabled = !isLoading,
@@ -301,7 +297,7 @@ fun AuthScreen(
                     ) {
                         Icon(imageVector = Icons.Default.FlashOn, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Continue as Guest Merchant", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        Text("Continue as Guest Merchant (Offline)", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -316,10 +312,10 @@ fun AuthScreen(
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(imageVector = Icons.Default.CloudDone, contentDescription = null, tint = Color(0xFF15945B), modifier = Modifier.size(16.dp))
+                    Icon(imageVector = Icons.Default.Storage, contentDescription = null, tint = Color(0xFF15945B), modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Firebase Realtime Sync: Connected to billgen-cc831",
+                        text = "Local SQLite Room DB: Active & Connected",
                         fontSize = 11.sp,
                         color = Color(0xFF15945B),
                         fontWeight = FontWeight.Bold
