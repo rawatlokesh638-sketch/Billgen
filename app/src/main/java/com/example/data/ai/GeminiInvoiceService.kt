@@ -55,8 +55,8 @@ class GeminiInvoiceService {
         customApiKey: String? = null
     ): Result<ParsedInvoiceData> = withContext(Dispatchers.IO) {
         val apiKey = customApiKey?.takeIf { it.isNotBlank() } ?: try {
-            com.example.BuildConfig::class.java.getField("GEMINI_API_KEY").get(null) as? String ?: ""
-        } catch (e: Exception) {
+            com.example.BuildConfig.GEMINI_API_KEY
+        } catch (_: Throwable) {
             ""
         }
 

@@ -6,13 +6,19 @@ import com.google.firebase.database.FirebaseDatabase
 import kotlinx.coroutines.tasks.await
 
 class FirebaseSyncService {
-    private val database: FirebaseDatabase by lazy {
-        FirebaseDatabase.getInstance("https://billgen-cc831-default-rtdb.firebaseio.com")
+    private val database: FirebaseDatabase? by lazy {
+        try {
+            FirebaseDatabase.getInstance("https://billgen-cc831-default-rtdb.firebaseio.com")
+        } catch (e: Exception) {
+            Log.e("FirebaseSyncService", "FirebaseDatabase init error: ${e.message}")
+            null
+        }
     }
 
-    private fun userRef(userId: String) = database.getReference("users").child(userId)
+    private fun userRef(userId: String) = database?.getReference("users")?.child(userId)
 
     suspend fun pushInvoiceToCloud(userId: String, invoice: InvoiceEntity) {
+        val ref = userRef(userId) ?: return
         try {
             val map = HashMap<String, Any?>().apply {
                 put("id", invoice.id)
@@ -58,7 +64,7 @@ class FirebaseSyncService {
                 put("createdAt", invoice.createdAt)
                 put("updatedAt", invoice.updatedAt)
             }
-            userRef(userId).child("invoices").child(invoice.id).setValue(map).await()
+            ref.child("invoices").child(invoice.id).setValue(map).await()
             Log.d("FirebaseSync", "Invoice ${invoice.invoiceNo} successfully uploaded to Firebase")
         } catch (e: Exception) {
             Log.e("FirebaseSync", "Error uploading invoice: ${e.message}")
@@ -66,14 +72,16 @@ class FirebaseSyncService {
     }
 
     suspend fun deleteInvoiceFromCloud(userId: String, invoiceId: String) {
+        val ref = userRef(userId) ?: return
         try {
-            userRef(userId).child("invoices").child(invoiceId).removeValue().await()
+            ref.child("invoices").child(invoiceId).removeValue().await()
         } catch (e: Exception) {
             Log.e("FirebaseSync", "Error deleting invoice: ${e.message}")
         }
     }
 
     suspend fun pushProductToCloud(userId: String, product: ProductEntity) {
+        val ref = userRef(userId) ?: return
         try {
             val map = HashMap<String, Any?>().apply {
                 put("id", product.id)
@@ -84,21 +92,23 @@ class FirebaseSyncService {
                 put("category", product.category)
                 put("createdAt", product.createdAt)
             }
-            userRef(userId).child("products").child(product.id).setValue(map).await()
+            ref.child("products").child(product.id).setValue(map).await()
         } catch (e: Exception) {
             Log.e("FirebaseSync", "Error uploading product: ${e.message}")
         }
     }
 
     suspend fun deleteProductFromCloud(userId: String, productId: String) {
+        val ref = userRef(userId) ?: return
         try {
-            userRef(userId).child("products").child(productId).removeValue().await()
+            ref.child("products").child(productId).removeValue().await()
         } catch (e: Exception) {
             Log.e("FirebaseSync", "Error deleting product: ${e.message}")
         }
     }
 
     suspend fun pushReceiptToCloud(userId: String, receipt: ReceiptEntity) {
+        val ref = userRef(userId) ?: return
         try {
             val map = HashMap<String, Any?>().apply {
                 put("id", receipt.id)
@@ -113,13 +123,14 @@ class FirebaseSyncService {
                 put("notes", receipt.notes)
                 put("createdAt", receipt.createdAt)
             }
-            userRef(userId).child("receipts").child(receipt.id).setValue(map).await()
+            ref.child("receipts").child(receipt.id).setValue(map).await()
         } catch (e: Exception) {
             Log.e("FirebaseSync", "Error uploading receipt: ${e.message}")
         }
     }
 
     suspend fun pushBusinessProfileToCloud(userId: String, profile: BusinessProfile) {
+        val ref = userRef(userId) ?: return
         try {
             val map = HashMap<String, Any?>().apply {
                 put("businessName", profile.businessName)
@@ -138,15 +149,16 @@ class FirebaseSyncService {
                 put("defaultGstRate", profile.defaultGstRate)
                 put("logoUri", profile.logoUri)
             }
-            userRef(userId).child("profile").setValue(map).await()
+            ref.child("profile").setValue(map).await()
         } catch (e: Exception) {
             Log.e("FirebaseSync", "Error uploading profile: ${e.message}")
         }
     }
 
     suspend fun fetchAllInvoicesFromCloud(userId: String): List<InvoiceEntity> {
+        val ref = userRef(userId) ?: return emptyList()
         return try {
-            val snapshot = userRef(userId).child("invoices").get().await()
+            val snapshot = ref.child("invoices").get().await()
             val list = mutableListOf<InvoiceEntity>()
             for (child in snapshot.children) {
                 val id = child.child("id").getValue(String::class.java) ?: child.key ?: continue
@@ -248,8 +260,9 @@ class FirebaseSyncService {
     }
 
     suspend fun fetchAllProductsFromCloud(userId: String): List<ProductEntity> {
+        val ref = userRef(userId) ?: return emptyList()
         return try {
-            val snapshot = userRef(userId).child("products").get().await()
+            val snapshot = ref.child("products").get().await()
             val list = mutableListOf<ProductEntity>()
             for (child in snapshot.children) {
                 val id = child.child("id").getValue(String::class.java) ?: child.key ?: continue
@@ -279,8 +292,9 @@ class FirebaseSyncService {
     }
 
     suspend fun fetchProfileFromCloud(userId: String): BusinessProfile? {
+        val ref = userRef(userId) ?: return null
         return try {
-            val child = userRef(userId).child("profile").get().await()
+            val child = ref.child("profile").get().await()
             if (!child.exists()) return null
             BusinessProfile(
                 businessName = child.child("businessName").getValue(String::class.java) ?: "BillGen AI Shop",
