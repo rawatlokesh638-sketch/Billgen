@@ -13,8 +13,14 @@ class FirebaseAuthManager {
         return try {
             FirebaseAuth.getInstance()
         } catch (e: Exception) {
-            Log.e("FirebaseAuthManager", "FirebaseAuth getInstance error: ${e.message}")
-            null
+            Log.e("FirebaseAuthManager", "FirebaseAuth getInstance error: ${e.message}", e)
+            try {
+                val app = com.google.firebase.FirebaseApp.getInstance()
+                FirebaseAuth.getInstance(app)
+            } catch (e2: Exception) {
+                Log.e("FirebaseAuthManager", "FirebaseAuth fallback init error: ${e2.message}", e2)
+                null
+            }
         }
     }
 
