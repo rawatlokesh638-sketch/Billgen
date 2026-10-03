@@ -45,6 +45,10 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
     val syncService = FirebaseSyncService()
 
     private val prefs = application.getSharedPreferences("billgen_business_profile", Context.MODE_PRIVATE)
+    private val authPrefs = application.getSharedPreferences("billgen_auth_session", Context.MODE_PRIVATE)
+
+    private val _isSessionLoggedIn = MutableStateFlow(authPrefs.getBoolean("is_logged_in", false))
+    val isSessionLoggedIn: StateFlow<Boolean> = _isSessionLoggedIn.asStateFlow()
 
     val currentUser: StateFlow<FirebaseUser?> = authManager.authStateFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), authManager.currentUser)
@@ -130,6 +134,12 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
                     val updated = _businessProfile.value.copy(businessName = storeName, businessEmail = email)
                     updateBusinessProfile(updated)
                 }
+                authPrefs.edit()
+                    .putBoolean("is_logged_in", true)
+                    .putString("user_email", email)
+                    .putString("login_mode", "firebase")
+                    .apply()
+                _isSessionLoggedIn.value = true
                 syncDataFromCloud()
                 onResult(true, "Account created successfully")
             }.onFailure { err ->
@@ -146,6 +156,12 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             val res = authManager.signInWithEmail(email, pass)
             res.onSuccess {
+                authPrefs.edit()
+                    .putBoolean("is_logged_in", true)
+                    .putString("user_email", email)
+                    .putString("login_mode", "firebase")
+                    .apply()
+                _isSessionLoggedIn.value = true
                 syncDataFromCloud()
                 onResult(true, "Login successful")
             }.onFailure { err ->
@@ -160,16 +176,20 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
 
     fun signInAsGuest(onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
+            authPrefs.edit()
+                .putBoolean("is_logged_in", true)
+                .putString("user_email", "guest_merchant")
+                .putString("login_mode", "guest")
+                .apply()
+            _isSessionLoggedIn.value = true
             try {
                 val res = authManager.signInAnonymously()
                 res.onSuccess {
                     onResult(true, "Logged in as Guest Merchant")
                 }.onFailure {
-                    // Fallback to local offline Room database mode seamlessly
                     onResult(true, "Entered Guest Mode (Offline Room Database)")
                 }
             } catch (e: Exception) {
-                // Guaranteed entry to local database mode even if exceptions occur
                 onResult(true, "Entered Guest Mode (Offline Room Database)")
             }
         }
@@ -177,6 +197,8 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
 
     fun signOutUser() {
         authManager.signOut()
+        authPrefs.edit().clear().apply()
+        _isSessionLoggedIn.value = false
     }
 
     fun sendPasswordReset(email: String, onResult: (Boolean, String) -> Unit) {

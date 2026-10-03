@@ -53,14 +53,14 @@ enum class InvoiceSubScreen {
 @Composable
 fun MainAppContent(viewModel: BillGenViewModel) {
     val currentUser by viewModel.currentUser.collectAsState()
-    var isGuestMode by remember { mutableStateOf(false) }
+    val isSessionLoggedIn by viewModel.isSessionLoggedIn.collectAsState()
 
-    // If not authenticated and not explicitly in guest mode, show Auth Screen (Signup / Login)
-    if (currentUser == null && !isGuestMode) {
+    // If not session logged in and not firebase authenticated, show Auth Screen (Signup / Login)
+    if (!isSessionLoggedIn && currentUser == null) {
         AuthScreen(
             viewModel = viewModel,
             onAuthSuccess = {
-                isGuestMode = true
+                // Auth succeeded or entered guest mode
             }
         )
         return

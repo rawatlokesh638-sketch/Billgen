@@ -9,52 +9,51 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 
 class FirebaseAuthManager {
-    private val auth: FirebaseAuth? by lazy {
-        try {
+    private fun getAuth(): FirebaseAuth? {
+        return try {
             FirebaseAuth.getInstance()
         } catch (e: Exception) {
-            Log.e("FirebaseAuthManager", "FirebaseAuth init error: ${e.message}")
+            Log.e("FirebaseAuthManager", "FirebaseAuth getInstance error: ${e.message}")
             null
         }
     }
 
     val currentUser: FirebaseUser?
-        get() = try { auth?.currentUser } catch (_: Exception) { null }
+        get() = try { getAuth()?.currentUser } catch (_: Exception) { null }
 
     val isUserLoggedIn: Boolean
-        get() = try { auth?.currentUser != null } catch (_: Exception) { false }
+        get() = try { getAuth()?.currentUser != null } catch (_: Exception) { false }
 
     val currentUserId: String
-        get() = try { auth?.currentUser?.uid ?: "guest_merchant" } catch (_: Exception) { "guest_merchant" }
+        get() = try { getAuth()?.currentUser?.uid ?: "guest_merchant" } catch (_: Exception) { "guest_merchant" }
 
     val userEmail: String
-        get() = try { auth?.currentUser?.email ?: "" } catch (_: Exception) { "" }
+        get() = try { getAuth()?.currentUser?.email ?: "" } catch (_: Exception) { "" }
 
     val isAnonymous: Boolean
-        get() = try { auth?.currentUser?.isAnonymous == true } catch (_: Exception) { false }
+        get() = try { getAuth()?.currentUser?.isAnonymous == true } catch (_: Exception) { false }
 
     fun authStateFlow(): Flow<FirebaseUser?> = callbackFlow {
-        val safeAuth = auth
-        if (safeAuth == null) {
-            trySend(null)
-            close()
-            return@callbackFlow
-        }
         val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
             trySend(try { firebaseAuth.currentUser } catch (_: Exception) { null })
         }
-        try {
-            safeAuth.addAuthStateListener(listener)
-        } catch (e: Exception) {
+        val safeAuth = getAuth()
+        if (safeAuth != null) {
+            try {
+                safeAuth.addAuthStateListener(listener)
+            } catch (e: Exception) {
+                trySend(null)
+            }
+        } else {
             trySend(null)
         }
         awaitClose {
-            try { safeAuth.removeAuthStateListener(listener) } catch (_: Exception) {}
+            try { getAuth()?.removeAuthStateListener(listener) } catch (_: Exception) {}
         }
     }
 
     suspend fun signUpWithEmail(email: String, pass: String): Result<FirebaseUser> {
-        val safeAuth = auth ?: return Result.failure(Exception("Authentication service unavailable"))
+        val safeAuth = getAuth() ?: return Result.failure(Exception("Firebase Auth initialized error. Check network connection."))
         return try {
             val res = safeAuth.createUserWithEmailAndPassword(email.trim(), pass).await()
             val user = res.user ?: throw Exception("Failed to create user account")
@@ -65,7 +64,7 @@ class FirebaseAuthManager {
     }
 
     suspend fun signInWithEmail(email: String, pass: String): Result<FirebaseUser> {
-        val safeAuth = auth ?: return Result.failure(Exception("Authentication service unavailable"))
+        val safeAuth = getAuth() ?: return Result.failure(Exception("Firebase Auth initialized error. Check network connection."))
         return try {
             val res = safeAuth.signInWithEmailAndPassword(email.trim(), pass).await()
             val user = res.user ?: throw Exception("Failed to sign in")
@@ -76,10 +75,10 @@ class FirebaseAuthManager {
     }
 
     suspend fun signInAnonymously(): Result<FirebaseUser> {
-        val safeAuth = auth ?: return Result.failure(Exception("Authentication service unavailable"))
+        val safeAuth = getAuth() ?: return Result.failure(Exception("Guest mode active locally"))
         return try {
             val res = safeAuth.signInAnonymously().await()
-            val user = res.user ?: throw Exception("Guest login failed")
+            val user = res.user ?: throw Exception("Guest login active")
             Result.success(user)
         } catch (e: Exception) {
             Result.failure(e)
@@ -87,7 +86,7 @@ class FirebaseAuthManager {
     }
 
     suspend fun sendPasswordReset(email: String): Result<Unit> {
-        val safeAuth = auth ?: return Result.failure(Exception("Authentication service unavailable"))
+        val safeAuth = getAuth() ?: return Result.failure(Exception("Firebase Auth service unavailable"))
         return try {
             safeAuth.sendPasswordResetEmail(email.trim()).await()
             Result.success(Unit)
@@ -97,6 +96,6 @@ class FirebaseAuthManager {
     }
 
     fun signOut() {
-        try { auth?.signOut() } catch (_: Exception) {}
+        try { getAuth()?.signOut() } catch (_: Exception) {}
     }
 }
