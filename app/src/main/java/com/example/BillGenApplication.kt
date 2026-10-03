@@ -8,12 +8,10 @@ class BillGenApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         try {
-            if (FirebaseApp.getApps(this).isEmpty()) {
-                FirebaseApp.initializeApp(this)
-                Log.d("BillGenApplication", "FirebaseApp initialized successfully")
-            }
+            val app = FirebaseApp.initializeApp(this)
+            Log.d("BillGenApplication", "FirebaseApp initialized successfully: ${app?.name}")
         } catch (e: Exception) {
-            Log.e("BillGenApplication", "FirebaseApp init handled gracefully: ${e.message}")
+            Log.e("BillGenApplication", "FirebaseApp init exception: ${e.message}")
         }
     }
 }

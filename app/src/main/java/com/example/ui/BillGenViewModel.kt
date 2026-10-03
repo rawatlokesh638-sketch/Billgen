@@ -144,10 +144,7 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
                 onResult(true, "Account created successfully")
             }.onFailure { err ->
                 val errorMsg = err.message ?: "Signup error"
-                val friendlyMsg = if (errorMsg.contains("service unavailable", ignoreCase = true)) {
-                    "Cloud auth unavailable. Tap 'Continue as Guest Merchant' for Offline Billing."
-                } else errorMsg
-                onResult(false, friendlyMsg)
+                onResult(false, errorMsg)
             }
         }
     }
@@ -166,10 +163,7 @@ class BillGenViewModel(application: Application) : AndroidViewModel(application)
                 onResult(true, "Login successful")
             }.onFailure { err ->
                 val errorMsg = err.message ?: "Login error"
-                val friendlyMsg = if (errorMsg.contains("service unavailable", ignoreCase = true)) {
-                    "Cloud auth unavailable. Tap 'Continue as Guest Merchant' for Offline Billing."
-                } else errorMsg
-                onResult(false, friendlyMsg)
+                onResult(false, errorMsg)
             }
         }
     }
