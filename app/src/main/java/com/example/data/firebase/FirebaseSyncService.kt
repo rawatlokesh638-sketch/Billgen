@@ -6,14 +6,23 @@ import com.google.firebase.database.FirebaseDatabase
 import kotlinx.coroutines.tasks.await
 
 class FirebaseSyncService {
-    private val database: FirebaseDatabase? by lazy {
-        try {
-            FirebaseDatabase.getInstance("https://billgen-cc831-default-rtdb.firebaseio.com")
-        } catch (e: Exception) {
-            Log.e("FirebaseSyncService", "FirebaseDatabase init error: ${e.message}")
-            null
+    private val database: FirebaseDatabase?
+        get() {
+            try {
+                return FirebaseDatabase.getInstance("https://billgen-cc831-default-rtdb.firebaseio.com")
+            } catch (e: Exception) {
+                Log.w("FirebaseSyncService", "Direct FirebaseDatabase getInstance failed: ${e.message}")
+            }
+            return try {
+                val app = com.example.BillGenApplication.instance.initFirebase()
+                if (app != null) {
+                    FirebaseDatabase.getInstance(app, "https://billgen-cc831-default-rtdb.firebaseio.com")
+                } else null
+            } catch (e: Exception) {
+                Log.e("FirebaseSyncService", "Fallback FirebaseDatabase init error: ${e.message}", e)
+                null
+            }
         }
-    }
 
     private fun userRef(userId: String) = database?.getReference("users")?.child(userId)
 

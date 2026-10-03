@@ -1,6 +1,8 @@
 package com.example.data.firebase
 
 import android.util.Log
+import com.example.BillGenApplication
+import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import kotlinx.coroutines.channels.awaitClose
@@ -9,18 +11,39 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 
 class FirebaseAuthManager {
+
+    private var lastInitError: String? = null
+
     private fun getAuth(): FirebaseAuth? {
-        return try {
-            FirebaseAuth.getInstance()
+        try {
+            val auth = FirebaseAuth.getInstance()
+            lastInitError = null
+            return auth
         } catch (e: Exception) {
-            Log.e("FirebaseAuthManager", "FirebaseAuth getInstance error: ${e.message}", e)
-            try {
-                val app = com.google.firebase.FirebaseApp.getInstance()
-                FirebaseAuth.getInstance(app)
-            } catch (e2: Exception) {
-                Log.e("FirebaseAuthManager", "FirebaseAuth fallback init error: ${e2.message}", e2)
+            Log.w("FirebaseAuthManager", "Direct FirebaseAuth.getInstance() failed: ${e.message}")
+            lastInitError = e.message
+        }
+
+        // Guaranteed fallback via BillGenApplication
+        return try {
+            val app = try {
+                BillGenApplication.instance.initFirebase()
+            } catch (appErr: Exception) {
+                Log.w("FirebaseAuthManager", "BillGenApplication.instance not ready: ${appErr.message}")
                 null
             }
+
+            if (app != null) {
+                val auth = FirebaseAuth.getInstance(app)
+                lastInitError = null
+                auth
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Log.e("FirebaseAuthManager", "Fallback FirebaseAuth init error: ${e.message}", e)
+            lastInitError = e.message
+            null
         }
     }
 
@@ -59,7 +82,9 @@ class FirebaseAuthManager {
     }
 
     suspend fun signUpWithEmail(email: String, pass: String): Result<FirebaseUser> {
-        val safeAuth = getAuth() ?: return Result.failure(Exception("Firebase Auth initialized error. Check network connection."))
+        val safeAuth = getAuth() ?: return Result.failure(
+            Exception(lastInitError?.let { "Firebase Auth Error: $it" } ?: "Firebase Auth initialization failed. Please check internet connection.")
+        )
         return try {
             val res = safeAuth.createUserWithEmailAndPassword(email.trim(), pass).await()
             val user = res.user ?: throw Exception("Failed to create user account")
@@ -70,7 +95,9 @@ class FirebaseAuthManager {
     }
 
     suspend fun signInWithEmail(email: String, pass: String): Result<FirebaseUser> {
-        val safeAuth = getAuth() ?: return Result.failure(Exception("Firebase Auth initialized error. Check network connection."))
+        val safeAuth = getAuth() ?: return Result.failure(
+            Exception(lastInitError?.let { "Firebase Auth Error: $it" } ?: "Firebase Auth initialization failed. Please check internet connection.")
+        )
         return try {
             val res = safeAuth.signInWithEmailAndPassword(email.trim(), pass).await()
             val user = res.user ?: throw Exception("Failed to sign in")
@@ -92,7 +119,9 @@ class FirebaseAuthManager {
     }
 
     suspend fun sendPasswordReset(email: String): Result<Unit> {
-        val safeAuth = getAuth() ?: return Result.failure(Exception("Firebase Auth service unavailable"))
+        val safeAuth = getAuth() ?: return Result.failure(
+            Exception(lastInitError?.let { "Firebase Auth Error: $it" } ?: "Firebase Auth service unavailable")
+        )
         return try {
             safeAuth.sendPasswordResetEmail(email.trim()).await()
             Result.success(Unit)
