@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -236,6 +237,50 @@ fun DashboardScreen(
             }
 
             item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                        .clickable { onOpenProUpgrade() },
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                    border = BorderStroke(1.dp, Brush.horizontalGradient(listOf(Color(0xFF6366F1), BillGenOrange, Color(0xFF10B981))))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clip(CircleShape)
+                                .background(Brush.linearGradient(listOf(BillGenOrange, Color(0xFF8B5CF6)))),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.WorkspacePremium, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("Store Plans & Pricing", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(color = BillGenOrange, shape = RoundedCornerShape(4.dp)) {
+                                    Text("From ₹49/mo", fontSize = 9.sp, fontWeight = FontWeight.Black, color = Color.White, modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
+                                }
+                            }
+                            Text(
+                                "Royal Blue, Emerald & Luxury Gold templates, PhonePe UPI & GST billing",
+                                fontSize = 11.sp,
+                                color = Color(0xFF94A3B8),
+                                maxLines = 1
+                            )
+                        }
+                        Icon(Icons.Default.ArrowForwardIos, contentDescription = "View Plans", tint = Color.White, modifier = Modifier.size(14.dp))
+                    }
+                }
+            }
+
+            item {
                 AdsterraBannerAd(isProUser = isPro)
             }
 
@@ -296,6 +341,26 @@ fun DashboardScreen(
             }
 
             item {
+                val last7DaysSales = remember(invoices) {
+                    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+                    val dayFormat = java.text.SimpleDateFormat("EEE", java.util.Locale.getDefault())
+                    val list = mutableListOf<Triple<String, Double, String>>()
+                    for (i in 6 downTo 0) {
+                        val cal = java.util.Calendar.getInstance()
+                        cal.add(java.util.Calendar.DAY_OF_YEAR, -i)
+                        val dateStr = sdf.format(cal.time)
+                        val dayLabel = if (i == 0) "Today" else dayFormat.format(cal.time)
+                        val daySales = invoices.filter { it.date == dateStr }.sumOf { it.total }
+                        list.add(Triple(dayLabel, daySales, dateStr))
+                    }
+                    list
+                }
+                val max7DaysSales = remember(last7DaysSales) {
+                    val highest = last7DaysSales.maxOfOrNull { it.second } ?: 0.0
+                    if (highest > 0.0) highest else 1000.0
+                }
+                var selectedDayInfo by remember { mutableStateOf<Pair<String, Double>?>(null) }
+
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -310,8 +375,20 @@ fun DashboardScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Weekly Sales Trend", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Text("7 Days", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                            Column {
+                                Text("Real Weekly Sales Trend", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                if (selectedDayInfo != null) {
+                                    Text(
+                                        "${selectedDayInfo!!.first}: ₹${selectedDayInfo!!.second.toInt()} sales",
+                                        fontSize = 11.sp,
+                                        color = BillGenOrange,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                } else {
+                                    Text("Calculated from your actual bills", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            Text("Last 7 Days", fontSize = 11.sp, color = BillGenOrange, fontWeight = FontWeight.Bold)
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
@@ -319,35 +396,55 @@ fun DashboardScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(110.dp),
+                                .height(120.dp),
                             horizontalArrangement = Arrangement.SpaceEvenly,
                             verticalAlignment = Alignment.Bottom
                         ) {
-                            val days = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-                            val heights = listOf(0.4f, 0.7f, 0.5f, 0.9f, 0.6f, 1.0f, 0.8f)
+                            last7DaysSales.forEach { (day, amount, dateStr) ->
+                                val fraction = if (amount > 0.0) {
+                                    (amount / max7DaysSales).toFloat().coerceIn(0.15f, 1f)
+                                } else {
+                                    0.06f // subtle base bar if 0
+                                }
 
-                            days.forEachIndexed { index, day ->
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.Bottom,
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable {
+                                            selectedDayInfo = Pair(day, amount)
+                                        }
                                 ) {
+                                    if (amount > 0.0) {
+                                        Text(
+                                            text = if (amount >= 1000) "${(amount / 1000).toInt()}k" else amount.toInt().toString(),
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = BillGenOrange,
+                                            modifier = Modifier.padding(bottom = 2.dp)
+                                        )
+                                    }
+
                                     Box(
                                         modifier = Modifier
                                             .width(22.dp)
-                                            .fillMaxHeight(heights[index])
+                                            .fillMaxHeight(fraction)
                                             .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
                                             .background(
-                                                Brush.verticalGradient(
-                                                    listOf(BillGenOrangeLight, BillGenOrange)
-                                                )
+                                                if (amount > 0.0) {
+                                                    Brush.verticalGradient(listOf(BillGenOrangeLight, BillGenOrange))
+                                                } else {
+                                                    Brush.verticalGradient(listOf(Color(0xFFE0E0E0), Color(0xFFD0D0D0)))
+                                                }
                                             )
                                     )
                                     Spacer(modifier = Modifier.height(6.dp))
                                     Text(
                                         text = day,
                                         fontSize = 10.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        fontWeight = if (day == "Today") FontWeight.Bold else FontWeight.Normal,
+                                        color = if (day == "Today") BillGenOrange else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }

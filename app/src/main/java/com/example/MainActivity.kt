@@ -6,16 +6,27 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.data.model.InvoiceEntity
 import com.example.ui.BillGenViewModel
+import com.example.ui.ai.BillGenAIAgentSheet
 import com.example.ui.monetization.EarnKaroInterstitialDialog
 import com.example.ui.monetization.ProUpgradeDialog
 import com.example.ui.monetization.RewardedAdDialog
@@ -40,9 +51,11 @@ class MainActivity : ComponentActivity() {
 
 sealed class Screen(val route: String, val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     object Dashboard : Screen("dashboard", "Home", Icons.Default.Dashboard)
-    object Invoices : Screen("invoices", "Invoices", Icons.Default.ReceiptLong)
+    object Invoices : Screen("invoices", "Create", Icons.Default.AddCircle)
+    object History : Screen("history", "History", Icons.Default.ReceiptLong)
+    object Business : Screen("business", "Business", Icons.Default.Storefront)
     object Udhaar : Screen("udhaar", "Udhaar", Icons.Default.AccountBalanceWallet)
-    object Tools : Screen("tools", "Tools", Icons.Default.Build)
+    object Tools : Screen("tools", "Tools", Icons.Default.Settings)
 }
 
 enum class InvoiceSubScreen {
@@ -73,6 +86,7 @@ fun MainAppContent(viewModel: BillGenViewModel) {
     var showRewardedAdDialog by remember { mutableStateOf(false) }
     var showProUpgradeDialog by remember { mutableStateOf(false) }
     var showInterstitialDialog by remember { mutableStateOf(false) }
+    var showAIAgentSheet by remember { mutableStateOf(false) }
     var actionCounter by remember { mutableIntStateOf(0) }
 
     val activePreviewInvoice by viewModel.activePreviewInvoice.collectAsState()
@@ -96,21 +110,108 @@ fun MainAppContent(viewModel: BillGenViewModel) {
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        floatingActionButton = {
+            Surface(
+                onClick = { showAIAgentSheet = true },
+                shape = RoundedCornerShape(30.dp),
+                color = Color(0xFF0F172A),
+                border = BorderStroke(
+                    1.2.dp,
+                    Brush.horizontalGradient(
+                        listOf(
+                            Color(0xFF6366F1),
+                            BillGenOrange,
+                            Color(0xFF10B981)
+                        )
+                    )
+                ),
+                shadowElevation = 12.dp,
+                modifier = Modifier
+                    .padding(bottom = 6.dp)
+                    .testTag("floating_bot_icon")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(BillGenOrange, Color(0xFF8B5CF6))
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(17.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "BillGen Copilot",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                color = Color(0xFF10B981).copy(alpha = 0.25f),
+                                shape = RoundedCornerShape(4.dp),
+                                border = BorderStroke(0.8.dp, Color(0xFF10B981))
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(5.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF10B981))
+                                    )
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = "LIVE",
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = Color(0xFF10B981)
+                                    )
+                                }
+                            }
+                        }
+                        Text(
+                            text = "Autonomous Store AI • Tap to chat",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFF94A3B8)
+                        )
+                    }
+                }
+            }
+        },
+        floatingActionButtonPosition = FabPosition.End,
         bottomBar = {
             NavigationBar(
                 containerColor = MaterialTheme.colorScheme.surface,
                 modifier = Modifier.testTag("bottom_nav_bar")
             ) {
-                val screens = listOf(Screen.Dashboard, Screen.Invoices, Screen.Udhaar, Screen.Tools)
+                val screens = listOf(Screen.Dashboard, Screen.Invoices, Screen.History, Screen.Business, Screen.Tools)
                 screens.forEach { screen ->
                     val isSelected = currentScreen == screen
                     NavigationBarItem(
                         selected = isSelected,
                         onClick = {
                             if (screen == Screen.Invoices) {
-                                if (activePreviewInvoice == null) {
-                                    invoiceSubScreen = InvoiceSubScreen.EDITOR
-                                }
+                                viewModel.initNewInvoice()
+                                invoiceSubScreen = InvoiceSubScreen.EDITOR
                             }
                             currentScreen = screen
                             maybeTriggerInterstitial(force = false)
@@ -195,6 +296,9 @@ fun MainAppContent(viewModel: BillGenViewModel) {
                                         viewModel.loadInvoiceForEditing(toEdit)
                                         invoiceSubScreen = InvoiceSubScreen.EDITOR
                                     },
+                                    onNavigateToHistory = {
+                                        currentScreen = Screen.History
+                                    },
                                     onBack = {
                                         invoiceSubScreen = InvoiceSubScreen.EDITOR
                                     }
@@ -204,6 +308,24 @@ fun MainAppContent(viewModel: BillGenViewModel) {
                             }
                         }
                     }
+                }
+
+                Screen.History -> {
+                    InvoiceHistoryScreen(
+                        viewModel = viewModel,
+                        onNavigateToPreview = { invoice ->
+                            viewModel.setPreviewInvoice(invoice)
+                            invoiceSubScreen = InvoiceSubScreen.PREVIEW
+                            currentScreen = Screen.Invoices
+                            maybeTriggerInterstitial(force = true)
+                        },
+                        onNavigateToCreate = {
+                            viewModel.initNewInvoice()
+                            editorInitialMode = "manual"
+                            invoiceSubScreen = InvoiceSubScreen.EDITOR
+                            currentScreen = Screen.Invoices
+                        }
+                    )
                 }
 
                 Screen.Udhaar -> {
@@ -216,6 +338,10 @@ fun MainAppContent(viewModel: BillGenViewModel) {
                             maybeTriggerInterstitial(force = true)
                         }
                     )
+                }
+
+                Screen.Business -> {
+                    BusinessProfileScreen(viewModel = viewModel)
                 }
 
                 Screen.Tools -> {
@@ -248,13 +374,19 @@ fun MainAppContent(viewModel: BillGenViewModel) {
         )
     }
 
-    // Pro Upgrade Dialog
+    // Subscription Plans Screen
     if (showProUpgradeDialog) {
-        ProUpgradeDialog(
-            onDismiss = { showProUpgradeDialog = false },
-            onUpgradeSuccess = {
-                viewModel.retentionHelper.isProUser = true
-            }
+        SubscriptionPlansScreen(
+            viewModel = viewModel,
+            onBack = { showProUpgradeDialog = false }
+        )
+    }
+
+    // BillGen AI Agent Assistant Sheet
+    if (showAIAgentSheet) {
+        BillGenAIAgentSheet(
+            viewModel = viewModel,
+            onDismiss = { showAIAgentSheet = false }
         )
     }
 }

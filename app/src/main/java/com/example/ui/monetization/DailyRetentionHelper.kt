@@ -9,9 +9,38 @@ import java.util.Locale
 class DailyRetentionHelper(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("billgen_retention_prefs", Context.MODE_PRIVATE)
 
+    var userPlanTier: String
+        get() {
+            val tier = prefs.getString("user_plan_tier", "FREE") ?: "FREE"
+            val expiresAt = prefs.getLong("plan_expires_at", 0L)
+            if (expiresAt > 0L && System.currentTimeMillis() > expiresAt) {
+                return "FREE"
+            }
+            return tier
+        }
+        set(value) = prefs.edit().putString("user_plan_tier", value).apply()
+
+    var planExpiresAt: Long
+        get() = prefs.getLong("plan_expires_at", 0L)
+        set(value) = prefs.edit().putLong("plan_expires_at", value).apply()
+
     var isProUser: Boolean
-        get() = prefs.getBoolean("is_pro_user", false)
-        set(value) = prefs.edit().putBoolean("is_pro_user", value).apply()
+        get() = userPlanTier != "FREE"
+        set(value) {
+            if (value && userPlanTier == "FREE") {
+                userPlanTier = "PRO"
+            } else if (!value) {
+                userPlanTier = "FREE"
+            }
+        }
+
+    fun isProPlusOrHigher(): Boolean {
+        return userPlanTier == "PRO_PLUS" || userPlanTier == "PREMIUM"
+    }
+
+    fun isPremium(): Boolean {
+        return userPlanTier == "PREMIUM"
+    }
 
     var aiScanCredits: Int
         get() = prefs.getInt("ai_scan_credits", 10)
@@ -52,6 +81,8 @@ class DailyRetentionHelper(context: Context) {
     }
 
     fun consumeAiScanCredit(): Boolean {
+        if (isPremium()) return true
+        if (isProPlusOrHigher()) return true
         if (isProUser) return true
         val current = aiScanCredits
         if (current > 0) {
@@ -63,5 +94,11 @@ class DailyRetentionHelper(context: Context) {
 
     fun addRewardCredits(credits: Int = 5) {
         aiScanCredits += credits
+    }
+
+    fun activateTier(tier: String, durationDays: Int) {
+        userPlanTier = tier
+        val expirationMillis = System.currentTimeMillis() + (durationDays.toLong() * 24 * 60 * 60 * 1000)
+        planExpiresAt = expirationMillis
     }
 }

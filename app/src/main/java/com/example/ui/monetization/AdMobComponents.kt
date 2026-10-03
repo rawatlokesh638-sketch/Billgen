@@ -893,6 +893,8 @@ fun ProUpgradeDialog(
     onDismiss: () -> Unit,
     onUpgradeSuccess: () -> Unit
 ) {
+    var selectedPlan by remember { mutableStateOf("pro_plus") } // pro, pro_plus, premium
+
     Dialog(onDismissRequest = onDismiss) {
         Card(
             modifier = Modifier
@@ -902,7 +904,7 @@ fun ProUpgradeDialog(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column(
-                modifier = Modifier.padding(22.dp),
+                modifier = Modifier.padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Surface(
@@ -910,7 +912,7 @@ fun ProUpgradeDialog(
                     shape = RoundedCornerShape(999.dp)
                 ) {
                     Text(
-                        text = "⭐ BILLGEN PRO",
+                        text = "⭐ CHOOSE STORE PLAN",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Black,
                         color = BillGenOrange,
@@ -918,35 +920,62 @@ fun ProUpgradeDialog(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
-                    text = "Supercharge Your Store",
-                    fontSize = 20.sp,
+                    text = "Supercharge Your Business",
+                    fontSize = 19.sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Professional billing without limits",
+                    text = "Ultra-affordable plans for Indian Merchants",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
+                // Plan Selectors
                 Column(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    ProFeatureRow("🚫 100% Ad-Free Experience")
-                    ProFeatureRow("⚡ Unlimited Gemini AI Screenshot Scans")
-                    ProFeatureRow("🎨 All 15 Premium Invoice Templates")
-                    ProFeatureRow("🖨 Wireless & 80mm Thermal Printer Support")
-                    ProFeatureRow("☁ Automatic Local & Backup Sync")
-                    ProFeatureRow("💼 Custom Watermark & Brand Logo on PDFs")
+                    // Pro Plan
+                    PlanOptionCard(
+                        title = "Pro Plan",
+                        price = "₹49 / month",
+                        yearlyPrice = "₹399 / year (Save 32%)",
+                        badge = "Basic",
+                        description = "Unlimited Bills • No Watermark • Custom Logo",
+                        isSelected = selectedPlan == "pro",
+                        onClick = { selectedPlan = "pro" }
+                    )
+
+                    // Pro Plus Plan
+                    PlanOptionCard(
+                        title = "Pro Plus Plan",
+                        price = "₹99 / month",
+                        yearlyPrice = "₹799 / year (Best Seller)",
+                        badge = "POPULAR",
+                        description = "100 AI Scans • GST Billing • Inventory & Cloud",
+                        isSelected = selectedPlan == "pro_plus",
+                        onClick = { selectedPlan = "pro_plus" }
+                    )
+
+                    // Premium Plan
+                    PlanOptionCard(
+                        title = "Premium Plan",
+                        price = "₹199 / month",
+                        yearlyPrice = "₹1,499 / year (Full Access)",
+                        badge = "VIP",
+                        description = "Unlimited AI • Thermal Printer • Staff & GST Reports",
+                        isSelected = selectedPlan == "premium",
+                        onClick = { selectedPlan = "premium" }
+                    )
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(18.dp))
 
                 Button(
                     onClick = {
@@ -958,17 +987,85 @@ fun ProUpgradeDialog(
                         .height(48.dp)
                         .testTag("pro_upgrade_button"),
                     shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = BillGenOrange)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (selectedPlan == "premium") Color(0xFF6D5CE7) else BillGenOrange
+                    )
                 ) {
-                    Text("Unlock Pro • ₹99 / Month", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text(
+                        text = when (selectedPlan) {
+                            "pro" -> "Activate Pro • ₹49/mo"
+                            "premium" -> "Activate Premium • ₹199/mo"
+                            else -> "Activate Pro Plus • ₹99/mo"
+                        },
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    )
                 }
 
                 TextButton(
                     onClick = onDismiss,
-                    modifier = Modifier.padding(top = 4.dp)
+                    modifier = Modifier.padding(top = 2.dp)
                 ) {
                     Text("Continue with Free Version", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlanOptionCard(
+    title: String,
+    price: String,
+    yearlyPrice: String,
+    badge: String,
+    description: String,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) BillGenOrange.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface
+        ),
+        border = CardDefaults.outlinedCardBorder().copy(
+            brush = androidx.compose.ui.graphics.SolidColor(if (isSelected) BillGenOrange else MaterialTheme.colorScheme.outlineVariant)
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(text = title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Surface(
+                        color = if (badge == "POPULAR") BillGenOrange else Color(0xFF15945B),
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            text = badge,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+                Text(text = description, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(text = yearlyPrice, fontSize = 10.sp, color = BillGenOrange, fontWeight = FontWeight.Medium)
+            }
+
+            Column(horizontalAlignment = Alignment.End) {
+                Text(text = price, fontWeight = FontWeight.Black, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
+                RadioButton(selected = isSelected, onClick = onClick)
             }
         }
     }

@@ -58,10 +58,30 @@ fun UdhaarLedgerScreen(
         }
     }
 
+    var showAddUdhaarDialog by remember { mutableStateOf(false) }
+    var newCustomerName by remember { mutableStateOf("") }
+    var newCustomerPhone by remember { mutableStateOf("") }
+    var newUdhaarAmount by remember { mutableStateOf("") }
+    var newUdhaarNotes by remember { mutableStateOf("") }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Customer Credit / Udhaar Ledger", fontWeight = FontWeight.Bold, fontSize = 18.sp) }
+                title = { Text("Customer Credit / Udhaar Ledger", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+                actions = {
+                    IconButton(onClick = { showAddUdhaarDialog = true }) {
+                        Icon(imageVector = Icons.Default.AddCircle, contentDescription = "Add Udhaar", tint = BillGenOrange)
+                    }
+                }
+            )
+        },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = { showAddUdhaarDialog = true },
+                containerColor = BillGenOrange,
+                contentColor = Color.White,
+                icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                text = { Text("Add Udhaar Entry", fontWeight = FontWeight.Bold) }
             )
         }
     ) { padding ->
@@ -258,6 +278,85 @@ fun UdhaarLedgerScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showPaymentDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showAddUdhaarDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddUdhaarDialog = false },
+            title = { Text("Add Customer Udhaar (नया उधार)") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = newCustomerName,
+                        onValueChange = { newCustomerName = it },
+                        label = { Text("Customer Name *") },
+                        placeholder = { Text("e.g. Ramesh Kumar") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = newCustomerPhone,
+                        onValueChange = { newCustomerPhone = it },
+                        label = { Text("Phone Number") },
+                        placeholder = { Text("10-digit Mobile No") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = newUdhaarAmount,
+                        onValueChange = { newUdhaarAmount = it },
+                        label = { Text("Udhaar Amount (₹) *") },
+                        placeholder = { Text("e.g. 1500") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = newUdhaarNotes,
+                        onValueChange = { newUdhaarNotes = it },
+                        label = { Text("Items / Notes (Optional)") },
+                        placeholder = { Text("e.g. 2 bags rice, oil") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val amount = newUdhaarAmount.toDoubleOrNull() ?: 0.0
+                        if (newCustomerName.isBlank() || amount <= 0.0) {
+                            Toast.makeText(context, "Please enter customer name and valid amount", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        viewModel.addNewUdhaarRecord(
+                            customerName = newCustomerName.trim(),
+                            customerPhone = newCustomerPhone.trim(),
+                            amount = amount,
+                            notes = newUdhaarNotes.trim()
+                        )
+                        Toast.makeText(context, "Udhaar entry of ₹$amount added & synced to Firebase!", Toast.LENGTH_LONG).show()
+                        newCustomerName = ""
+                        newCustomerPhone = ""
+                        newUdhaarAmount = ""
+                        newUdhaarNotes = ""
+                        showAddUdhaarDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = BillGenOrange)
+                ) {
+                    Text("Save Udhaar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddUdhaarDialog = false }) {
                     Text("Cancel")
                 }
             }

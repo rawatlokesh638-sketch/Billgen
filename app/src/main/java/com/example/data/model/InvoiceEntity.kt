@@ -9,26 +9,46 @@ data class InvoiceEntity(
     @PrimaryKey
     val id: String = "inv_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(6)}",
     val invoiceNo: String = "INV-2026-0001",
+    val invoiceSubtitle: String = "TAX INVOICE",
     val date: String = "",
     val dueDate: String = "",
+    val referenceNo: String = "",
     val orderId: String = "",
     
-    // Customer
+    // Customer Details
     val customerName: String = "",
     val customerPhone: String = "",
+    val customerEmail: String = "",
     val customerAddress: String = "",
+    val customerCompany: String = "",
+    val customerGstin: String = "",
+
+    // Ship To / Delivery Details (Optional)
+    val shipToName: String = "",
+    val shipToPhone: String = "",
+    val shipToAddress: String = "",
     
-    // Business Profile
-    val businessName: String = "BillGen AI Shop",
-    val businessTagline: String = "Quality • Trust • Service",
-    val businessAddress: String = "New Delhi, India",
+    // Business Profile Snapshot
+    val businessName: String = "My Store",
+    val businessTagline: String = "",
+    val businessAddress: String = "",
     val businessPhone: String = "",
     val businessEmail: String = "",
     val businessWebsite: String = "",
+    val socialHandle: String = "",
     val businessGstin: String = "",
     val upiId: String = "",
+    val bankAccountName: String = "",
+    val bankName: String = "",
+    val bankAccountNo: String = "",
+    val bankIfsc: String = "",
     val bankDetails: String = "",
     val logoUri: String = "",
+    val businessPhotoUri: String = "",
+    val stampUri: String = "",
+    val signatureUri: String = "",
+    val signatoryName: String = "",
+    val signatoryDesignation: String = "Authorized Signatory",
     
     // Items stored as JSON string
     val itemsJson: String = "[]",
@@ -53,7 +73,7 @@ data class InvoiceEntity(
     val paymentStatus: String = "UNPAID",
     val paymentMethod: String = "UPI",
     val notes: String = "Thank you for your business!",
-    val terms: String = "Goods once sold cannot be returned unless defective.",
+    val terms: String = "1. Goods once sold cannot be returned unless defective.\n2. Payment due within 7 days from invoice date.",
     
     // Design & Template
     val templateName: String = "modern",

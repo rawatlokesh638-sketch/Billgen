@@ -51,6 +51,12 @@ fun InvoiceEditorScreen(
     val customerName by viewModel.editorCustomerName.collectAsState()
     val customerPhone by viewModel.editorCustomerPhone.collectAsState()
     val customerAddress by viewModel.editorCustomerAddress.collectAsState()
+    val shipToName by viewModel.editorShipToName.collectAsState()
+    val shipToPhone by viewModel.editorShipToPhone.collectAsState()
+    val shipToAddress by viewModel.editorShipToAddress.collectAsState()
+    val editorLogoUri by viewModel.editorLogoUri.collectAsState()
+    val editorPhotoUri by viewModel.editorPhotoUri.collectAsState()
+    val editorGstin by viewModel.editorGstin.collectAsState()
     val invoiceNo by viewModel.editorInvoiceNo.collectAsState()
     val date by viewModel.editorDate.collectAsState()
     val dueDate by viewModel.editorDueDate.collectAsState()
@@ -83,6 +89,18 @@ fun InvoiceEditorScreen(
                 }
             } catch (e: Exception) {}
         }
+    }
+
+    val logoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        uri?.let { viewModel.editorLogoUri.value = it.toString() }
+    }
+
+    val storePhotoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        uri?.let { viewModel.editorPhotoUri.value = it.toString() }
     }
 
     val calculation = remember(items, discount, shipping, roundoff, gstRate, gstType, gstMode, amountPaid, dueDate) {
@@ -369,6 +387,172 @@ fun InvoiceEditorScreen(
                             value = customerAddress,
                             onValueChange = { viewModel.editorCustomerAddress.value = it },
                             label = { Text("Customer Address (City / State)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                    }
+                }
+            }
+
+            // Ship To / Delivery Details (Optional) Card
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = CardDefaults.outlinedCardBorder()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(imageVector = Icons.Default.LocalShipping, contentDescription = null, tint = BillGenOrange, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Ship To / Delivery Details (Optional)", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            }
+                            if (shipToAddress.isNotBlank() || shipToName.isNotBlank()) {
+                                TextButton(onClick = {
+                                    viewModel.editorShipToName.value = ""
+                                    viewModel.editorShipToPhone.value = ""
+                                    viewModel.editorShipToAddress.value = ""
+                                }) {
+                                    Text("Clear (Hide Box)", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                        Text(
+                            text = "💡 Note: डिलीवरी एड्रेस न होने पर यह बॉक्स इनवॉइस से पूरी तरह छिप जाएगा।",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = shipToName,
+                                onValueChange = { viewModel.editorShipToName.value = it },
+                                label = { Text("Receiver Name") },
+                                placeholder = { Text("Same as Customer") },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                value = shipToPhone,
+                                onValueChange = { viewModel.editorShipToPhone.value = it },
+                                label = { Text("Receiver Phone") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                                modifier = Modifier.weight(1f),
+                                singleLine = true
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = shipToAddress,
+                            onValueChange = { viewModel.editorShipToAddress.value = it },
+                            label = { Text("Delivery Address") },
+                            placeholder = { Text("City, State, Pincode (Khali chhodne par Ship To box nahi dikhega)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                    }
+                }
+            }
+
+            // Store Branding & GST (For this Bill)
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = CardDefaults.outlinedCardBorder()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(imageVector = Icons.Default.Storefront, contentDescription = null, tint = BillGenOrange, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Store Branding & GST (Optional for Bill)", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                        Text(
+                            text = "💡 Profile me dali details auto aayi hain. Yahan se is bill ke liye alag photo/logo/GST bhi daal sakte hain.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // Logo Button
+                            OutlinedButton(
+                                onClick = {
+                                    logoPickerLauncher.launch(
+                                        androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Image, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (editorLogoUri.isNotBlank()) "Logo Added ✓" else "+ Add Logo",
+                                    fontSize = 11.sp,
+                                    color = if (editorLogoUri.isNotBlank()) Color(0xFF15945B) else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+
+                            // Store Photo Button
+                            OutlinedButton(
+                                onClick = {
+                                    storePhotoPickerLauncher.launch(
+                                        androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (editorPhotoUri.isNotBlank()) "Photo Added ✓" else "+ Store Photo",
+                                    fontSize = 11.sp,
+                                    color = if (editorPhotoUri.isNotBlank()) Color(0xFF15945B) else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+
+                        if (editorLogoUri.isNotBlank() || editorPhotoUri.isNotBlank()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                if (editorLogoUri.isNotBlank()) {
+                                    TextButton(onClick = { viewModel.editorLogoUri.value = "" }) {
+                                        Text("Remove Logo", fontSize = 10.sp, color = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                                if (editorPhotoUri.isNotBlank()) {
+                                    TextButton(onClick = { viewModel.editorPhotoUri.value = "" }) {
+                                        Text("Remove Photo", fontSize = 10.sp, color = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        OutlinedTextField(
+                            value = editorGstin,
+                            onValueChange = { viewModel.editorGstin.value = it.uppercase() },
+                            label = { Text("GSTIN Number (Optional)") },
+                            placeholder = { Text("e.g. 07AAAAA0000A1Z5") },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
                         )

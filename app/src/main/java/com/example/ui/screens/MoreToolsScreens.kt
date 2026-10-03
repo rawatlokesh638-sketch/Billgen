@@ -29,6 +29,7 @@ import com.example.data.model.ProductEntity
 import com.example.data.model.QuotationEntity
 import com.example.data.model.ReceiptEntity
 import com.example.ui.BillGenViewModel
+import com.example.ui.monetization.UserSubscriptionStatusCard
 import com.example.ui.theme.BillGenOrange
 import com.example.util.FormatUtils
 import com.example.util.InvoicePrintHelper
@@ -59,14 +60,16 @@ fun MoreToolsScreen(
                     "catalog" -> 0
                     "receipts" -> 1
                     "quotes" -> 2
-                    "ai" -> 3
-                    else -> 4
+                    "plans" -> 3
+                    "ai" -> 4
+                    else -> 5
                 },
                 edgePadding = 16.dp
             ) {
                 Tab(selected = selectedSection == "catalog", onClick = { selectedSection = "catalog" }, text = { Text("📦 Catalog") })
                 Tab(selected = selectedSection == "receipts", onClick = { selectedSection = "receipts" }, text = { Text("🧾 Receipts") })
                 Tab(selected = selectedSection == "quotes", onClick = { selectedSection = "quotes" }, text = { Text("📋 Quotations") })
+                Tab(selected = selectedSection == "plans", onClick = { selectedSection = "plans" }, text = { Text("👑 Plans & Buy") })
                 Tab(selected = selectedSection == "ai", onClick = { selectedSection = "ai" }, text = { Text("🤖 AI Assistant") })
                 Tab(selected = selectedSection == "settings", onClick = { selectedSection = "settings" }, text = { Text("⚙ Settings") })
             }
@@ -75,6 +78,7 @@ fun MoreToolsScreen(
                 "catalog" -> ProductCatalogSection(viewModel)
                 "receipts" -> PaymentReceiptsSection(viewModel)
                 "quotes" -> QuotationsSection(viewModel)
+                "plans" -> SubscriptionPlansContent(viewModel)
                 "ai" -> AiAssistantSection(viewModel)
                 "settings" -> SettingsSection(viewModel, onOpenProUpgrade)
             }
@@ -415,7 +419,10 @@ fun AiAssistantSection(viewModel: BillGenViewModel) {
 }
 
 @Composable
-fun SettingsSection(viewModel: BillGenViewModel, onOpenProUpgrade: () -> Unit) {
+fun SettingsSection(
+    viewModel: BillGenViewModel,
+    onOpenProUpgrade: () -> Unit
+) {
     val profile by viewModel.businessProfile.collectAsState()
     val isPro = viewModel.retentionHelper.isProUser
     val context = LocalContext.current
@@ -435,25 +442,10 @@ fun SettingsSection(viewModel: BillGenViewModel, onOpenProUpgrade: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth().clickable { onOpenProUpgrade() },
-                colors = CardDefaults.cardColors(containerColor = if (isPro) Color(0xFFE9F8F0) else Color(0xFFFFECE0)),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(imageVector = Icons.Default.Stars, contentDescription = null, tint = BillGenOrange, modifier = Modifier.size(32.dp))
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(if (isPro) "⭐ BillGen Pro Activated" else "⭐ Upgrade to BillGen Pro", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        Text(if (isPro) "Unlimited scans, Ad-free, all templates unlocked." else "Ad-free experience & unlimited Gemini AI scans.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    if (!isPro) {
-                        Button(onClick = onOpenProUpgrade, colors = ButtonDefaults.buttonColors(containerColor = BillGenOrange), shape = RoundedCornerShape(8.dp)) {
-                            Text("Upgrade", fontSize = 11.sp)
-                        }
-                    }
-                }
-            }
+            UserSubscriptionStatusCard(
+                viewModel = viewModel,
+                onOpenUpgrade = onOpenProUpgrade
+            )
         }
 
         item {

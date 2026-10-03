@@ -409,4 +409,149 @@ class FirebaseSyncService {
             null
         }
     }
+
+    suspend fun pushSubscriptionRequest(sub: com.example.data.model.SubscriptionRequest) {
+        val db = database ?: return
+        try {
+            val map = HashMap<String, Any?>().apply {
+                put("id", sub.id)
+                put("userId", sub.userId)
+                put("userEmail", sub.userEmail)
+                put("planType", sub.planType)
+                put("billingCycle", sub.billingCycle)
+                put("amount", sub.amount)
+                put("utrNumber", sub.utrNumber)
+                put("paymentPhone", sub.paymentPhone)
+                put("status", sub.status)
+                put("adminNote", sub.adminNote)
+                put("requestedAt", sub.requestedAt)
+                put("approvedAt", sub.approvedAt)
+                put("expiresAt", sub.expiresAt)
+            }
+            db.getReference("users").child(sub.userId).child("subscriptions").child(sub.id).setValue(map).await()
+            db.getReference("admin_subscriptions").child(sub.id).setValue(map).await()
+        } catch (e: Exception) {
+            Log.e("FirebaseSyncService", "Error pushing subscription request: ${e.message}")
+        }
+    }
+
+    suspend fun fetchUserSubscriptionRequests(userId: String): List<com.example.data.model.SubscriptionRequest> {
+        val db = database ?: return emptyList()
+        return try {
+            val snapshot = db.getReference("users").child(userId).child("subscriptions").get().await()
+            val list = mutableListOf<com.example.data.model.SubscriptionRequest>()
+            for (child in snapshot.children) {
+                val id = child.child("id").getValue(String::class.java) ?: continue
+                val email = child.child("userEmail").getValue(String::class.java) ?: ""
+                val plan = child.child("planType").getValue(String::class.java) ?: "PRO"
+                val cycle = child.child("billingCycle").getValue(String::class.java) ?: "MONTHLY"
+                val amount = child.child("amount").getValue(Double::class.java) ?: 0.0
+                val utr = child.child("utrNumber").getValue(String::class.java) ?: ""
+                val phone = child.child("paymentPhone").getValue(String::class.java) ?: "9050884894"
+                val status = child.child("status").getValue(String::class.java) ?: "PENDING"
+                val note = child.child("adminNote").getValue(String::class.java) ?: ""
+                val reqAt = child.child("requestedAt").getValue(Long::class.java) ?: 0L
+                val appAt = child.child("approvedAt").getValue(Long::class.java) ?: 0L
+                val expAt = child.child("expiresAt").getValue(Long::class.java) ?: 0L
+
+                list.add(
+                    com.example.data.model.SubscriptionRequest(
+                        id = id,
+                        userId = userId,
+                        userEmail = email,
+                        planType = plan,
+                        billingCycle = cycle,
+                        amount = amount,
+                        utrNumber = utr,
+                        paymentPhone = phone,
+                        status = status,
+                        adminNote = note,
+                        requestedAt = reqAt,
+                        approvedAt = appAt,
+                        expiresAt = expAt
+                    )
+                )
+            }
+            list.sortedByDescending { it.requestedAt }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun fetchAllAdminSubscriptionRequests(): List<com.example.data.model.SubscriptionRequest> {
+        val db = database ?: return emptyList()
+        return try {
+            val snapshot = db.getReference("admin_subscriptions").get().await()
+            val list = mutableListOf<com.example.data.model.SubscriptionRequest>()
+            for (child in snapshot.children) {
+                val id = child.child("id").getValue(String::class.java) ?: continue
+                val uId = child.child("userId").getValue(String::class.java) ?: continue
+                val email = child.child("userEmail").getValue(String::class.java) ?: ""
+                val plan = child.child("planType").getValue(String::class.java) ?: "PRO"
+                val cycle = child.child("billingCycle").getValue(String::class.java) ?: "MONTHLY"
+                val amount = child.child("amount").getValue(Double::class.java) ?: 0.0
+                val utr = child.child("utrNumber").getValue(String::class.java) ?: ""
+                val phone = child.child("paymentPhone").getValue(String::class.java) ?: "9050884894"
+                val status = child.child("status").getValue(String::class.java) ?: "PENDING"
+                val note = child.child("adminNote").getValue(String::class.java) ?: ""
+                val reqAt = child.child("requestedAt").getValue(Long::class.java) ?: 0L
+                val appAt = child.child("approvedAt").getValue(Long::class.java) ?: 0L
+                val expAt = child.child("expiresAt").getValue(Long::class.java) ?: 0L
+
+                list.add(
+                    com.example.data.model.SubscriptionRequest(
+                        id = id,
+                        userId = uId,
+                        userEmail = email,
+                        planType = plan,
+                        billingCycle = cycle,
+                        amount = amount,
+                        utrNumber = utr,
+                        paymentPhone = phone,
+                        status = status,
+                        adminNote = note,
+                        requestedAt = reqAt,
+                        approvedAt = appAt,
+                        expiresAt = expAt
+                    )
+                )
+            }
+            list.sortedByDescending { it.requestedAt }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun updateSubscriptionStatusInCloud(
+        requestId: String,
+        userId: String,
+        newStatus: String,
+        adminNote: String,
+        expiresAt: Long,
+        planType: String
+    ) {
+        val db = database ?: return
+        try {
+            val updates = HashMap<String, Any?>().apply {
+                put("status", newStatus)
+                put("adminNote", adminNote)
+                put("approvedAt", System.currentTimeMillis())
+                put("expiresAt", expiresAt)
+            }
+            db.getReference("users").child(userId).child("subscriptions").child(requestId).updateChildren(updates).await()
+            db.getReference("admin_subscriptions").child(requestId).updateChildren(updates).await()
+
+            if (newStatus == "APPROVED") {
+                val subData = HashMap<String, Any?>().apply {
+                    put("planType", planType)
+                    put("status", "APPROVED")
+                    put("expiresAt", expiresAt)
+                    put("updatedAt", System.currentTimeMillis())
+                }
+                db.getReference("users").child(userId).child("active_subscription").setValue(subData).await()
+            }
+        } catch (e: Exception) {
+            Log.e("FirebaseSyncService", "Error updating subscription status: ${e.message}")
+        }
+    }
 }
